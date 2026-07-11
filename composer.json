@@ -1,0 +1,28 @@
+{
+    "name": "adilinu94/wp-ai-suite",
+    "description": "WP AI Suite - Enterprise WordPress AI Plugin (Phase 1 MVP)",
+    "type": "wordpress-plugin",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.1"
+    },
+    "require-dev": {
+        "pestphp/pest": "^2.0",
+        "yoast/phpunit-polyfills": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "WPAiSuite\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "WPAiSuite\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}
