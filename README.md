@@ -9,7 +9,7 @@ ist austauschbare Adapter-Implementierung eines Interfaces aus dem jeweiligen `C
 ## Status
 
 - [x] **M0** — Grundgeruest (Plugin-Bootstrap, DB-Migrationen, Aktivierung/Deinstallation)
-- [ ] M1 — Provider Layer (OpenAI, Anthropic, OpenAI-kompatibel)
+- [x] **M1** — Provider Layer (OpenAI, Anthropic, OpenAI-kompatibel)
 - [ ] M2 — Conversation Engine + Streaming
 - [ ] M3 — Frontend-Chat-Widget
 - [ ] M4 — Knowledge Engine (Chunking, Embeddings, Vector-Store)

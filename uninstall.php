@@ -25,6 +25,8 @@ $wpais_options = [
     'wpais_db_version',
     'wpais_active_provider',
     'wpais_system_prompt',
+    'wpais_custom_label',
+    'wpais_custom_base_url',
 ];
 
 foreach ($wpais_options as $wpais_option) {
