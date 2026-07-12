@@ -27,6 +27,9 @@ $wpais_options = [
     'wpais_system_prompt',
     'wpais_custom_label',
     'wpais_custom_base_url',
+    'wpais_default_model_openai',
+    'wpais_default_model_anthropic',
+    'wpais_default_model_custom',
 ];
 
 foreach ($wpais_options as $wpais_option) {

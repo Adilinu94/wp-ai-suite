@@ -11,10 +11,13 @@ use WPAiSuite\Security\ApiKeyRepositoryInterface;
  * Phase-1-Umfang laut M1-DoD (Bauplan Abschnitt 15): Provider-Auswahl + API-Key-Eingabe, schreibt
  * ueber ApiKeyRepositoryInterface (welches wiederum ApiKeyVault fuer die Verschluesselung nutzt).
  *
- * Der System-Prompt-Editor aus Abschnitt 11 gehoert zur Prompt Engine und damit zu einem
- * spaeteren Meilenstein (Prompt/SystemPromptBuilder existiert noch nicht) — bewusst NICHT Teil
- * dieser Seite, siehe Regel 2 ("Architektur nicht eigenmaechtig erweitern"). Kann als eigener
- * Tab/eigene Seite ergaenzt werden, sobald die Prompt Engine ansteht.
+ * Um M2 (ChatRequest braucht ein konkretes $model) nachgereicht: Standard-Modell pro Provider
+ * (Abschnitt 11 nennt das bereits als Teil von "Settings", in M1 aber zunaechst ausgelassen).
+ *
+ * Der System-Prompt-Editor aus Abschnitt 11 gehoert weiterhin zur Prompt Engine im engeren Sinn
+ * (Editor-UI, nicht die Builder-Logik aus M2) und ist bewusst NICHT Teil dieser Seite — siehe
+ * Regel 2 ("Architektur nicht eigenmaechtig erweitern"). Kann als eigener Tab ergaenzt werden,
+ * sobald dafuer Bedarf besteht; bis dahin nutzt SystemPromptBuilder den Default-Text.
  */
 final class ProviderSettingsPage
 {
@@ -24,6 +27,7 @@ final class ProviderSettingsPage
     private const NONCE_ACTION = 'wpais_save_provider_settings';
     private const CAPABILITY = 'manage_options';
     private const MANAGED_KEY_FIELDS = ['openai', 'anthropic', 'custom'];
+    private const OPTION_DEFAULT_MODEL_PREFIX = 'wpais_default_model_';
 
     public function __construct(
         private readonly ApiKeyRepositoryInterface $apiKeys,
@@ -35,6 +39,12 @@ final class ProviderSettingsPage
     {
         add_action('admin_menu', [$this, 'addMenuPage']);
         add_action('admin_post_' . self::NONCE_ACTION, [$this, 'handleSave']);
+    }
+
+    /** Wird auch von Plugin.php beim Verdrahten von ConversationService genutzt. */
+    public static function defaultModelOptionName(string $providerKey): string
+    {
+        return self::OPTION_DEFAULT_MODEL_PREFIX . $providerKey;
     }
 
     public function addMenuPage(): void
@@ -70,7 +80,9 @@ final class ProviderSettingsPage
 
         $this->renderActiveProviderSelect($activeProvider);
         $this->renderKeyField('openai', __('OpenAI API-Key', 'wp-ai-suite'));
+        $this->renderModelField('openai', __('OpenAI Standard-Modell', 'wp-ai-suite'), 'z.B. gpt-5.2-mini');
         $this->renderKeyField('anthropic', __('Anthropic API-Key', 'wp-ai-suite'));
+        $this->renderModelField('anthropic', __('Anthropic Standard-Modell', 'wp-ai-suite'), 'z.B. claude-sonnet-5');
         $this->renderCustomProviderFields();
 
         echo '</tbody></table>';
@@ -115,6 +127,21 @@ final class ProviderSettingsPage
         echo '</td></tr>';
     }
 
+    private function renderModelField(string $providerKey, string $label, string $placeholder): void
+    {
+        $optionName = self::defaultModelOptionName($providerKey);
+
+        echo '<tr><th scope="row"><label for="wpais_default_model_' . esc_attr($providerKey) . '">' . esc_html($label) . '</label></th><td>';
+        printf(
+            '<input type="text" class="regular-text" name="wpais_default_model_%1$s" id="wpais_default_model_%1$s" value="%2$s" placeholder="%3$s" />',
+            esc_attr($providerKey),
+            esc_attr((string) get_option($optionName, '')),
+            esc_attr($placeholder),
+        );
+        echo '<p class="description">' . esc_html__('Exakte Modell-ID des Providers. Verfuegbare IDs kann der jeweilige Adapter live per listModels() abfragen — bislang nur programmatisch, keine UI-Dropdown-Anbindung in M2.', 'wp-ai-suite') . '</p>';
+        echo '</td></tr>';
+    }
+
     private function renderCustomProviderFields(): void
     {
         echo '<tr><th scope="row"><label for="wpais_custom_label">' . esc_html__('OpenAI-kompatibel — Name', 'wp-ai-suite') . '</label></th><td>';
@@ -133,6 +160,7 @@ final class ProviderSettingsPage
         echo '</td></tr>';
 
         $this->renderKeyField('custom', __('OpenAI-kompatibel — API-Key', 'wp-ai-suite'));
+        $this->renderModelField('custom', __('OpenAI-kompatibel — Standard-Modell', 'wp-ai-suite'), 'z.B. deepseek-chat');
     }
 
     public function handleSave(): void
@@ -153,6 +181,11 @@ final class ProviderSettingsPage
             if (!empty($_POST[$fieldName])) {
                 $plainKey = sanitize_text_field(wp_unslash($_POST[$fieldName]));
                 $this->apiKeys->store($providerKey, $plainKey);
+            }
+
+            $modelFieldName = 'wpais_default_model_' . $providerKey;
+            if (isset($_POST[$modelFieldName])) {
+                update_option(self::defaultModelOptionName($providerKey), sanitize_text_field(wp_unslash($_POST[$modelFieldName])));
             }
         }
 

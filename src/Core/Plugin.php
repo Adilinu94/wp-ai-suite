@@ -5,8 +5,14 @@ declare(strict_types=1);
 namespace WPAiSuite\Core;
 
 use WPAiSuite\Admin\Pages\ProviderSettingsPage;
+use WPAiSuite\AiCore\Conversation\Repository\ConversationRepositoryInterface;
+use WPAiSuite\AiCore\Conversation\Repository\WpdbConversationRepository;
+use WPAiSuite\AiCore\Prompt\SystemPromptBuilder;
+use WPAiSuite\AiCore\Provider\ActiveProviderResolver;
 use WPAiSuite\AiCore\Provider\ProviderFactory;
 use WPAiSuite\Core\Container\Container;
+use WPAiSuite\Rest\Controllers\ChatController;
+use WPAiSuite\Rest\Controllers\ConversationController;
 use WPAiSuite\Security\ApiKeyRepositoryInterface;
 use WPAiSuite\Security\ApiKeyVault;
 use WPAiSuite\Security\VaultException;
@@ -32,6 +38,7 @@ final class Plugin
     {
         $this->container = new Container();
         $this->registerProviderServices();
+        $this->registerConversationServices();
     }
 
     public function boot(): void
@@ -43,6 +50,7 @@ final class Plugin
         );
 
         $this->bootProviderServices();
+        $this->bootConversationServices();
 
         /**
          * Erweiterungspunkt fuer spaetere Module (Admin, REST, Frontend, ...).
@@ -95,5 +103,46 @@ final class Plugin
                 );
             });
         }
+    }
+
+    /**
+     * M2 — Conversation Engine (Bauplan Abschnitt 15, M2-DoD). Registriert nur die REST-Routen
+     * selbst; welcher Provider/welches Modell aktiv ist, wird ERST pro einzelner /chat-Anfrage
+     * in ChatController::handle() aufgeloest (siehe dortiger Docblock) — ein fehlender/falscher
+     * Provider darf nicht das Registrieren der Route selbst zum Scheitern bringen.
+     */
+    private function registerConversationServices(): void
+    {
+        $this->container->set(ConversationRepositoryInterface::class, static function (): ConversationRepositoryInterface {
+            global $wpdb;
+
+            return new WpdbConversationRepository($wpdb);
+        });
+
+        $this->container->set(SystemPromptBuilder::class, static function (): SystemPromptBuilder {
+            return new SystemPromptBuilder((string) get_option('wpais_system_prompt', ''));
+        });
+
+        $this->container->set(ActiveProviderResolver::class, static function (Container $c): ActiveProviderResolver {
+            return new ActiveProviderResolver($c->get(ProviderFactory::class));
+        });
+
+        $this->container->set(ChatController::class, static function (Container $c): ChatController {
+            return new ChatController(
+                $c->get(ConversationRepositoryInterface::class),
+                $c->get(SystemPromptBuilder::class),
+                $c->get(ActiveProviderResolver::class),
+            );
+        });
+
+        $this->container->set(ConversationController::class, static function (Container $c): ConversationController {
+            return new ConversationController($c->get(ConversationRepositoryInterface::class));
+        });
+    }
+
+    private function bootConversationServices(): void
+    {
+        $this->container->get(ChatController::class)->register();
+        $this->container->get(ConversationController::class)->register();
     }
 }
