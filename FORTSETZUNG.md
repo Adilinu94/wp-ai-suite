@@ -6,7 +6,7 @@
 ## Projekt
 
 Enterprise-KI-Plattform als WordPress-Plugin (Platzhaltername "WP AI Suite" / Namespace `WPAiSuite`).
-Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M4
+Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M5
 weitergearbeitet wird.
 
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
@@ -21,8 +21,8 @@ weitergearbeitet wird.
 
 ## Stand
 
-**M0, M1, M2, M3 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`, `2770198`, `f4f715c`,
-siehe `git log`).
+**M0, M1, M2, M3, M4 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`, `2770198`,
+`f4f715c`, `19dae1e`, siehe `git log`).
 
 - **M0** — Plugin-Bootstrap, DB-Migrationen (6 Tabellen), Ordnerstruktur, DSGVO-Uninstall.
 - **M1** — `AiProviderInterface` + DTOs, `OpenAiProvider`/`AnthropicProvider`/`OpenAiCompatibleProvider`
@@ -44,17 +44,42 @@ siehe `git log`).
   Markdown-Renderer, `sessionStorage`-Session-Persistenz + Verlaufs-Wiederherstellung ueber
   `GET /wpais/v1/conversations/{token}`), `assets/css/wpais-chat.css` (CSS-Custom-Properties,
   `--wpais-primary` etc. — M8 bindet Elementor-Style-Controls direkt daran).
+- **M4** — `RecursiveTextChunker` (echte rekursive Trenner-Hierarchie: Absatz -> Zeile -> Satzende
+  -> Leerzeichen -> harter Zeichenschnitt, ~500 Tokens/Chunk, 50 Tokens Overlap),
+  `WpdbJsonVectorStore` (das "SqliteVectorStore-Äquivalent [JSON-Spalte]" aus dem M4-DoD,
+  Cosine-Similarity PHP-seitig via eigener `CosineSimilarity`-Klasse), `WordPressContentSource`
+  (Posts/Pages via `WP_Query`, einzige M4-Quelle — PdfSource/FaqSource sind M6),
+  `DocumentIngestionService` (Checksum-basierte Re-Ingestion-Erkennung, Fehlerisolation pro
+  Dokument), `EmbeddingService` (Batch-Wrapper um `AiProviderInterface::embed()`),
+  `POST /wpais/v1/documents` (Ingestion-Ausloeser, `source_type=wp_content`; volle
+  Wissensbasis-Verwaltung mit Liste/Re-Index-Button ist laut Bauplan M10).
 
-**Nächster Schritt: M4 — Knowledge Engine (Chunking, Embeddings, Vector-Store)**
-- `VectorStoreInterface` + `KnowledgeSourceInterface`/`ChunkerInterface` (Bauplan Abschnitt 5,
-  bereits mit Code-Schnipsel vorgegeben — anders als ConversationRepositoryInterface in M2)
-  implementieren
-- RAG-Ablauf: Dokument -> Chunking -> Embedding (ueber den aktiven Provider — **Achtung**:
-  schlaegt fehl, wenn der aktive Chat-Provider Anthropic ist, siehe offene Punkte unten) ->
-  JSON-Embedding in MySQL (Phase 1; Qdrant/pgvector erst Phase 2, Bauplan Abschnitt 7)
-- Definition of Done: Bauplan Abschnitt 15, Zeile M4
+**Nächster Schritt: M5 — RAG-Integration**
+- Retrieval **vor** dem Prompt-Bau einhaengen: `VectorStoreInterface::query()` mit der Embedding
+  der User-Frage aufrufen, Top-K-Treffer in `SystemPromptBuilder`/`ConversationService`
+  einspeisen (Bauplan Abschnitt 7: "kein Re-Ranking, keine Hybrid-Search" — bewusst einfach)
+- Quellen im Chat anzeigen (welches Dokument die Antwort gestuetzt hat) — betrifft sowohl
+  `ChatController`s SSE-Events (neues Event? ergaenztes "final"-Event?) als auch `wpais-chat.js`
+- Definition of Done: Bauplan Abschnitt 15, Zeile M5
+- **Wichtig:** `DocumentIngestionService`/`ActiveProviderResolver` existieren schon (M2/M4) —
+  M5 ist im Kern Verdrahtung + Anzeige, keine neue Kern-Logik
 
 ## Manuell testen
+
+**M4 (Knowledge Engine):** Ingestion aus WP-Content ausloesen (braucht `manage_options`, also als
+eingeloggter Admin):
+
+```bash
+curl -X POST "https://solar.local/wp-json/wpais/v1/documents" \
+  -H "X-WP-Nonce: <NONCE_AUS_SCHRITT_1>" \
+  -H "Content-Type: application/json" \
+  -d '{"source_type":"wp_content"}'
+```
+
+Antwort ist ein JSON-Objekt `{processed, skipped_unchanged, failed, errors}`. Erneuter Aufruf ohne
+Aenderungen an den Beitraegen/Seiten sollte `skipped_unchanged` hochzaehlen, `processed` auf 0
+zeigen (Checksum-Erkennung). **Setzt voraus, dass der aktive Provider Embeddings unterstuetzt**
+(OpenAI oder OpenAI-kompatibel — nicht Anthropic, siehe offene Punkte).
 
 **M3 (Frontend):** `[wpais_chat]` in eine beliebige Seite/einen Beitrag einfuegen (Block-Editor:
 Shortcode-Block, oder klassischer Editor). Attribute optional: `[wpais_chat mode="inline"
@@ -93,15 +118,15 @@ Standard-Modell hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klare
 - **Composer/Pest laufen hier weiterhin NICHT**: `packagist.org` ist im Sandbox-Netzwerk nicht
   erreichbar (nur github.com/npm/pypi/crates.io u.ä. sind erlaubt). `composer install` und damit
   `vendor/bin/pest` sind hier nicht ausführbar.
-- Alle M1/M2-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
+- Alle M1–M4-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
   Wegwerf-Shim laufen lassen (kein Teil des Repos), der `test()`/`expect()`/`beforeEach()` minimal
-  nachbildet und die echten Testdateien unveraendert einliest — 64/64 gruen. **Bitte trotzdem
+  nachbildet und die echten Testdateien unveraendert einliest — 85/85 gruen. **Bitte trotzdem
   einmal lokal `composer install && vendor/bin/pest` laufen lassen**, um mit dem echten
   Test-Runner gegenzuchecken.
 - Integration-Tests (`tests/Integration/`, `WP_UnitTestCase`) brauchen zusätzlich eine
   WordPress-Test-Suite + Test-DB — siehe `tests/Integration/README.md` für den offenen
-  Setup-Schritt. Testfälle für `WpdbApiKeyRepository` (M1) und `WpdbConversationRepository` (M2)
-  liegen fertig geschrieben bereit.
+  Setup-Schritt. Testfälle für `WpdbApiKeyRepository` (M1), `WpdbConversationRepository` (M2)
+  und `WpdbDocumentRepository`/`WpdbJsonVectorStore` (M4) liegen fertig geschrieben bereit.
 - **Node.js (v22) ist im Sandbox-Container verfügbar** (`node`/`nodejs`, kein `npm install`
   nötig für reines `node --check`/Skripte ohne Pakete). `assets/js/wpais-chat.js` exportiert
   seine reinen Funktionen (`renderMarkdown`, `escapeHtml`, `sanitizeUrl`, `parseSseEvent`) über
@@ -156,9 +181,22 @@ Projekte bleibt als Alternative offen, falls du weiterhin direkt aus der Sandbox
    noch kein eigenes Verhalten — das ist laut Bauplan M8 ("Alle 4 Display-Modi funktionieren").
 7. Kein Admin-UI, um den `[wpais_chat]`-Shortcode-Text irgendwo anzuzeigen/zu kopieren — Nutzer
    muss ihn manuell in eine Seite einfügen. Ggf. Kandidat für einen späteren Settings-Hinweis.
+8. `wpais_ingest_document`/`wpais_rescan_documents` (Bauplan Abschnitt 13, Action Scheduler)
+   sind NICHT verdrahtet — Action Scheduler ist eine Composer-Dependency
+   (`woocommerce/action-scheduler`), die hier mangels Packagist-Zugriff nicht geholt werden
+   konnte. `POST /wpais/v1/documents` laeuft daher SYNCHRON im Request — fuer eine Handvoll
+   Seiten/Beitraege unproblematisch, bei grosser Wissensbasis spaeter durch einen Background-Job
+   zu ersetzen (DocumentIngestionService selbst muesste sich dafuer nicht aendern).
+9. `WpdbJsonVectorStore::query()` scannt bei jeder Anfrage ALLE Chunks verarbeiteter Dokumente
+   (Cosine-Similarity PHP-seitig, kein Index) — laut Bauplan Abschnitt 7 akzeptabel fuer
+   MVP-Groessenordnung, wird bei vielen hundert/tausend Chunks spuerbar langsamer. Phase 2
+   (Qdrant/pgvector) loest das durch echten Adapter-Tausch, ohne Aufrufer aendern zu muessen.
+10. Nur `post_type IN (post, page)`, nur `post_status = publish` wird indexiert
+    (`WordPressContentSource`-Konstruktor nimmt optional andere Post-Types entgegen, Default ist
+    aber hartkodiert) — kein Admin-UI, um das einzustellen.
 
 ## Wie im neuen Chat weitermachen
 
 `BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder verlinken, dann reicht:
-"Fahre mit M4 (Knowledge Engine) fort" — der neue Chat hat damit den vollen Kontext, ohne
+"Fahre mit M5 (RAG-Integration) fort" — der neue Chat hat damit den vollen Kontext, ohne
 dass die Grundsatzentscheidungen erneut diskutiert werden müssen.

@@ -16,10 +16,11 @@ zusaetzlich noetig:
 Da dieses Repo bisher nur lokal (Local by Flywheel, `solar.local`) und nicht in einer
 Sandbox-/CI-Umgebung mit MySQL lief, ist dieser Schritt bewusst **noch offen** — analog zum
 bereits in `FORTSETZUNG.md` dokumentierten PHP/Composer-Gap fuer M0. Die Test-**Faelle** in
-`tests/Integration/Security/WpdbApiKeyRepositoryTest.php` (M1) und
-`tests/Integration/AiCore/Conversation/WpdbConversationRepositoryTest.php` (M2) sind fertig
-geschrieben und laufen, sobald obiges Setup steht; ihre fachliche Korrektheit wurde stattdessen
-indirekt ueber Unit-Tests (`ApiKeyVault`, `ConversationService` mit `FakeConversationRepository`)
+`tests/Integration/Security/WpdbApiKeyRepositoryTest.php` (M1),
+`tests/Integration/AiCore/Conversation/WpdbConversationRepositoryTest.php` (M2) und
+`tests/Integration/Knowledge/WpdbDocumentRepositoryTest.php` (M4) sind fertig geschrieben und
+laufen, sobald obiges Setup steht; ihre fachliche Korrektheit wurde stattdessen indirekt ueber
+Unit-Tests (`ApiKeyVault`, `ConversationService`/`DocumentIngestionService` jeweils mit Fakes)
 sowie eine manuelle Pruefung gegen `Migrator::createTables()`s tatsaechliches Schema
 sichergestellt.
 

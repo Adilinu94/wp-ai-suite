@@ -12,7 +12,7 @@ ist austauschbare Adapter-Implementierung eines Interfaces aus dem jeweiligen `C
 - [x] **M1** — Provider Layer (OpenAI, Anthropic, OpenAI-kompatibel)
 - [x] **M2** — Conversation Engine + Streaming
 - [x] **M3** — Frontend-Chat-Widget
-- [ ] M4 — Knowledge Engine (Chunking, Embeddings, Vector-Store)
+- [x] M4 — Knowledge Engine (Chunking, Embeddings, Vector-Store)
 - [ ] M5 — RAG-Integration
 - [ ] M6 — PDF/FAQ-Ingestion
 - [ ] M7 — Tool Engine (Wissenssuche, WooCommerce-Produktsuche)

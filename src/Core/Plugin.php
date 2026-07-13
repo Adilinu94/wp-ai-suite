@@ -14,8 +14,15 @@ use WPAiSuite\Core\Container\Container;
 use WPAiSuite\Frontend\ChatWidget\AssetManager;
 use WPAiSuite\Frontend\ChatWidget\ChatWidgetRenderer;
 use WPAiSuite\Frontend\ChatWidget\Shortcode;
+use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
+use WPAiSuite\Knowledge\Chunking\RecursiveTextChunker;
+use WPAiSuite\Knowledge\DocumentRepositoryInterface;
+use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
+use WPAiSuite\Knowledge\VectorStore\WpdbJsonVectorStore;
+use WPAiSuite\Knowledge\WpdbDocumentRepository;
 use WPAiSuite\Rest\Controllers\ChatController;
 use WPAiSuite\Rest\Controllers\ConversationController;
+use WPAiSuite\Rest\Controllers\DocumentsController;
 use WPAiSuite\Security\ApiKeyRepositoryInterface;
 use WPAiSuite\Security\ApiKeyVault;
 use WPAiSuite\Security\VaultException;
@@ -43,6 +50,7 @@ final class Plugin
         $this->registerProviderServices();
         $this->registerConversationServices();
         $this->registerFrontendServices();
+        $this->registerKnowledgeServices();
     }
 
     public function boot(): void
@@ -56,6 +64,7 @@ final class Plugin
         $this->bootProviderServices();
         $this->bootConversationServices();
         $this->bootFrontendServices();
+        $this->bootKnowledgeServices();
 
         /**
          * Erweiterungspunkt fuer spaetere Module (Admin, REST, Frontend, ...).
@@ -175,5 +184,46 @@ final class Plugin
     {
         $this->container->get(AssetManager::class)->registerAssets();
         $this->container->get(Shortcode::class)->register();
+    }
+
+    /**
+     * M4 — Knowledge Engine (Bauplan Abschnitt 15, M4-DoD: "Chunking + Embedding +
+     * SqliteVectorStore-Aequivalent [JSON-Spalte], Ingestion aus WP-Content funktioniert
+     * end-to-end"). Der Embedding-Provider wird — wie bei ChatController — ERST pro einzelner
+     * POST /wpais/v1/documents-Anfrage in DocumentsController aufgeloest, nicht hier beim
+     * Registrieren, aus demselben Grund: ein fehlender/falscher Provider darf nicht die Route
+     * selbst zum Scheitern bringen.
+     */
+    private function registerKnowledgeServices(): void
+    {
+        $this->container->set(DocumentRepositoryInterface::class, static function (): DocumentRepositoryInterface {
+            global $wpdb;
+
+            return new WpdbDocumentRepository($wpdb);
+        });
+
+        $this->container->set(ChunkerInterface::class, static function (): ChunkerInterface {
+            return new RecursiveTextChunker();
+        });
+
+        $this->container->set(VectorStoreInterface::class, static function (): VectorStoreInterface {
+            global $wpdb;
+
+            return new WpdbJsonVectorStore($wpdb);
+        });
+
+        $this->container->set(DocumentsController::class, static function (Container $c): DocumentsController {
+            return new DocumentsController(
+                $c->get(DocumentRepositoryInterface::class),
+                $c->get(ChunkerInterface::class),
+                $c->get(VectorStoreInterface::class),
+                $c->get(ActiveProviderResolver::class),
+            );
+        });
+    }
+
+    private function bootKnowledgeServices(): void
+    {
+        $this->container->get(DocumentsController::class)->register();
     }
 }
