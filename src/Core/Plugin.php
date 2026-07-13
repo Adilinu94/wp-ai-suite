@@ -11,6 +11,9 @@ use WPAiSuite\AiCore\Prompt\SystemPromptBuilder;
 use WPAiSuite\AiCore\Provider\ActiveProviderResolver;
 use WPAiSuite\AiCore\Provider\ProviderFactory;
 use WPAiSuite\Core\Container\Container;
+use WPAiSuite\Frontend\ChatWidget\AssetManager;
+use WPAiSuite\Frontend\ChatWidget\ChatWidgetRenderer;
+use WPAiSuite\Frontend\ChatWidget\Shortcode;
 use WPAiSuite\Rest\Controllers\ChatController;
 use WPAiSuite\Rest\Controllers\ConversationController;
 use WPAiSuite\Security\ApiKeyRepositoryInterface;
@@ -39,6 +42,7 @@ final class Plugin
         $this->container = new Container();
         $this->registerProviderServices();
         $this->registerConversationServices();
+        $this->registerFrontendServices();
     }
 
     public function boot(): void
@@ -51,6 +55,7 @@ final class Plugin
 
         $this->bootProviderServices();
         $this->bootConversationServices();
+        $this->bootFrontendServices();
 
         /**
          * Erweiterungspunkt fuer spaetere Module (Admin, REST, Frontend, ...).
@@ -144,5 +149,31 @@ final class Plugin
     {
         $this->container->get(ChatController::class)->register();
         $this->container->get(ConversationController::class)->register();
+    }
+
+    /**
+     * M3 — Frontend-Widget (Bauplan Abschnitt 15, M3-DoD). AssetManager registriert JS/CSS
+     * frueh (wp_enqueue_scripts), enqueued sie aber erst tatsaechlich, wenn der Shortcode
+     * gerendert wird — laedt also nie sitewide, nur auf Seiten mit [wpais_chat].
+     */
+    private function registerFrontendServices(): void
+    {
+        $this->container->set(AssetManager::class, static function (): AssetManager {
+            return new AssetManager(WPAIS_PLUGIN_URL, WPAIS_VERSION);
+        });
+
+        $this->container->set(ChatWidgetRenderer::class, static function (): ChatWidgetRenderer {
+            return new ChatWidgetRenderer();
+        });
+
+        $this->container->set(Shortcode::class, static function (Container $c): Shortcode {
+            return new Shortcode($c->get(ChatWidgetRenderer::class), $c->get(AssetManager::class));
+        });
+    }
+
+    private function bootFrontendServices(): void
+    {
+        $this->container->get(AssetManager::class)->registerAssets();
+        $this->container->get(Shortcode::class)->register();
     }
 }

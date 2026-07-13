@@ -1,0 +1,267 @@
+/*
+ * WP AI Suite — Chat-Widget-Basisstyling (M3).
+ *
+ * Design-Entscheidung: kein generisches "beide Seiten identische Sprechblasen"-Chatlook.
+ * User-Nachrichten sind kompakte, rechtsbuendige Pills; Assistant-Antworten sind linksbuendiger,
+ * ungebundener Fliesstext mit kleinem Akzentstrich (damit Markdown — Ueberschriften, Listen,
+ * Codebloecke — nicht in einer Sprechblasen-Form gequetscht wird). Die blinkende Cursor-Markierung
+ * am Ende einer streamenden Antwort ist das eine bewusste Signature-Element: sie verweist direkt
+ * auf das tatsaechliche Verhalten (progressives Streaming), keine dekorative Ladeanimation.
+ *
+ * Alle Farben/Radien/Fonts ueber CSS-Custom-Properties auf .wpais-chat — client-seitig einfach
+ * per Theme-CSS ueberschreibbar. --wpais-primary ist bewusst so benannt, weil M8 (Elementor-
+ * Widget) genau diese Variable an die Elementor-Style-Controls binden wird.
+ */
+
+.wpais-chat {
+	--wpais-primary: #1f6f78;
+	--wpais-primary-contrast: #ffffff;
+	--wpais-bg: #fafaf8;
+	--wpais-surface: #ffffff;
+	--wpais-border: #e4e2dc;
+	--wpais-text: #1c1f26;
+	--wpais-text-muted: #6b6f76;
+	--wpais-error: #b3492f;
+	--wpais-radius: 10px;
+	--wpais-font: inherit;
+	--wpais-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+	display: flex;
+	flex-direction: column;
+	height: 480px;
+	max-height: 80vh;
+	background: var(--wpais-bg);
+	border: 1px solid var(--wpais-border);
+	border-radius: var(--wpais-radius);
+	font-family: var(--wpais-font);
+	color: var(--wpais-text);
+	overflow: hidden;
+	box-sizing: border-box;
+}
+
+.wpais-chat *,
+.wpais-chat *::before,
+.wpais-chat *::after {
+	box-sizing: inherit;
+}
+
+.wpais-chat__messages {
+	flex: 1 1 auto;
+	overflow-y: auto;
+	padding: 20px;
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+}
+
+.wpais-chat__row {
+	display: flex;
+	width: 100%;
+}
+
+.wpais-chat__row--user {
+	justify-content: flex-end;
+}
+
+.wpais-chat__row--assistant {
+	justify-content: flex-start;
+}
+
+.wpais-chat__bubble {
+	max-width: 85%;
+	font-size: 0.95em;
+	line-height: 1.55;
+}
+
+.wpais-chat__row--user .wpais-chat__bubble {
+	background: var(--wpais-primary);
+	color: var(--wpais-primary-contrast);
+	padding: 9px 14px;
+	border-radius: calc(var(--wpais-radius) * 1.6) calc(var(--wpais-radius) * 1.6) 4px
+		calc(var(--wpais-radius) * 1.6);
+}
+
+.wpais-chat__row--assistant .wpais-chat__bubble {
+	position: relative;
+	padding-left: 2px;
+}
+
+.wpais-chat__row--assistant .wpais-chat__bubble::before {
+	content: "";
+	display: block;
+	width: 20px;
+	height: 2px;
+	background: var(--wpais-primary);
+	margin-bottom: 8px;
+}
+
+.wpais-chat__bubble > *:first-child {
+	margin-top: 0;
+}
+
+.wpais-chat__bubble > *:last-child {
+	margin-bottom: 0;
+}
+
+.wpais-chat__bubble p {
+	margin: 0 0 0.6em;
+}
+
+.wpais-chat__bubble h1,
+.wpais-chat__bubble h2,
+.wpais-chat__bubble h3,
+.wpais-chat__bubble h4,
+.wpais-chat__bubble h5,
+.wpais-chat__bubble h6 {
+	font-size: 1.08em;
+	line-height: 1.3;
+	margin: 0.7em 0 0.35em;
+}
+
+.wpais-chat__bubble ul,
+.wpais-chat__bubble ol {
+	margin: 0 0 0.6em;
+	padding-left: 1.3em;
+}
+
+.wpais-chat__bubble li {
+	margin-bottom: 0.2em;
+}
+
+.wpais-chat__bubble blockquote {
+	margin: 0 0 0.6em;
+	padding-left: 0.8em;
+	border-left: 2px solid var(--wpais-border);
+	color: var(--wpais-text-muted);
+}
+
+.wpais-chat__bubble code {
+	font-family: var(--wpais-font-mono);
+	font-size: 0.88em;
+	background: var(--wpais-border);
+	padding: 0.15em 0.4em;
+	border-radius: 4px;
+}
+
+.wpais-chat__bubble pre {
+	font-family: var(--wpais-font-mono);
+	font-size: 0.85em;
+	line-height: 1.5;
+	background: var(--wpais-text);
+	color: var(--wpais-bg);
+	padding: 12px 14px;
+	border-radius: 6px;
+	overflow-x: auto;
+	margin: 0 0 0.6em;
+}
+
+.wpais-chat__bubble pre code {
+	background: none;
+	padding: 0;
+	color: inherit;
+}
+
+.wpais-chat__bubble a {
+	color: var(--wpais-primary);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+.wpais-chat__bubble--error {
+	color: var(--wpais-error);
+}
+
+.wpais-chat__row--user .wpais-chat__bubble p {
+	margin: 0;
+}
+
+.wpais-chat__cursor {
+	display: inline-block;
+	width: 2px;
+	height: 1em;
+	background: var(--wpais-primary);
+	vertical-align: text-bottom;
+	margin-left: 2px;
+	animation: wpais-chat-blink 1s step-end infinite;
+}
+
+@keyframes wpais-chat-blink {
+	50% {
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.wpais-chat__cursor {
+		animation: none;
+	}
+}
+
+.wpais-chat__form {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+	padding: 12px;
+	border-top: 1px solid var(--wpais-border);
+	background: var(--wpais-surface);
+}
+
+.wpais-chat__input {
+	flex: 1 1 auto;
+	resize: none;
+	border: 1px solid var(--wpais-border);
+	border-radius: calc(var(--wpais-radius) * 0.7);
+	padding: 10px 12px;
+	font-family: var(--wpais-font);
+	font-size: 0.95em;
+	color: var(--wpais-text);
+	background: var(--wpais-bg);
+	max-height: 120px;
+}
+
+.wpais-chat__input:focus-visible {
+	outline: 2px solid var(--wpais-primary);
+	outline-offset: 1px;
+}
+
+.wpais-chat__send {
+	flex: 0 0 auto;
+	width: 40px;
+	height: 40px;
+	border: none;
+	border-radius: 50%;
+	background: var(--wpais-primary);
+	color: var(--wpais-primary-contrast);
+	font-size: 1.1em;
+	line-height: 1;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.wpais-chat__send:focus-visible {
+	outline: 2px solid var(--wpais-text);
+	outline-offset: 2px;
+}
+
+.wpais-chat__send:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.wpais-chat__send:hover:not(:disabled) {
+	filter: brightness(1.08);
+}
+
+@media (max-width: 480px) {
+	.wpais-chat {
+		height: 70vh;
+		border-radius: 0;
+	}
+
+	.wpais-chat__messages {
+		padding: 14px;
+	}
+}

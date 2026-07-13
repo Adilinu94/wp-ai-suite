@@ -11,7 +11,7 @@ ist austauschbare Adapter-Implementierung eines Interfaces aus dem jeweiligen `C
 - [x] **M0** — Grundgeruest (Plugin-Bootstrap, DB-Migrationen, Aktivierung/Deinstallation)
 - [x] **M1** — Provider Layer (OpenAI, Anthropic, OpenAI-kompatibel)
 - [x] **M2** — Conversation Engine + Streaming
-- [ ] M3 — Frontend-Chat-Widget
+- [x] **M3** — Frontend-Chat-Widget
 - [ ] M4 — Knowledge Engine (Chunking, Embeddings, Vector-Store)
 - [ ] M5 — RAG-Integration
 - [ ] M6 — PDF/FAQ-Ingestion

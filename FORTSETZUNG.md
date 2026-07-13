@@ -6,7 +6,7 @@
 ## Projekt
 
 Enterprise-KI-Plattform als WordPress-Plugin (Platzhaltername "WP AI Suite" / Namespace `WPAiSuite`).
-Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M3
+Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M4
 weitergearbeitet wird.
 
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
@@ -21,7 +21,8 @@ weitergearbeitet wird.
 
 ## Stand
 
-**M0, M1, M2 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`, `2770198`, siehe `git log`).
+**M0, M1, M2, M3 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`, `2770198`, `f4f715c`,
+siehe `git log`).
 
 - **M0** — Plugin-Bootstrap, DB-Migrationen (6 Tabellen), Ordnerstruktur, DSGVO-Uninstall.
 - **M1** — `AiProviderInterface` + DTOs, `OpenAiProvider`/`AnthropicProvider`/`OpenAiCompatibleProvider`
@@ -36,18 +37,33 @@ weitergearbeitet wird.
   `POST /wpais/v1/chat` (SSE-Streaming) und `GET /wpais/v1/conversations/{token}`,
   `ActiveProviderResolver` (loest `wpais_active_provider`-Option lazy PRO REQUEST auf, nicht
   beim Route-Registrieren — siehe Docblock in `ChatController`).
+- **M3** — `[wpais_chat]`-Shortcode (`Frontend/ChatWidget/Shortcode.php` +
+  `ChatWidgetRenderer` + `AssetManager`), `assets/js/wpais-chat.js` (ein einziges,
+  abhaengigkeitsfreies Vanilla-JS-Bundle: SSE-Konsum per `fetch()`+`ReadableStream` — NICHT
+  natives `EventSource`, das kann kein POST mit Custom-Headern —, eigener minimaler
+  Markdown-Renderer, `sessionStorage`-Session-Persistenz + Verlaufs-Wiederherstellung ueber
+  `GET /wpais/v1/conversations/{token}`), `assets/css/wpais-chat.css` (CSS-Custom-Properties,
+  `--wpais-primary` etc. — M8 bindet Elementor-Style-Controls direkt daran).
 
-**Nächster Schritt: M3 — Frontend-Widget**
-- Shortcode + JS-Bundle, das den Chat rendert
-- Streaming sichtbar machen (konsumiert die SSE-Events aus `/wpais/v1/chat`:
-  `conversation`, `token`, `final`, `error`, `done` — siehe `ChatController::sendSseEvent()`)
-- Markdown-Rendering der Assistant-Antworten
-- Definition of Done: Bauplan Abschnitt 15, Zeile M3
-- Für die Nonce, die der Browser fuer `/wpais/v1/chat` braucht: `wp_create_nonce('wp_rest')`,
-  typischerweise via `wp_localize_script` an das JS-Bundle übergeben (M3-Aufgabe, noch nicht
-  gebaut — bisher nur per WP-CLI testbar, siehe unten)
+**Nächster Schritt: M4 — Knowledge Engine (Chunking, Embeddings, Vector-Store)**
+- `VectorStoreInterface` + `KnowledgeSourceInterface`/`ChunkerInterface` (Bauplan Abschnitt 5,
+  bereits mit Code-Schnipsel vorgegeben — anders als ConversationRepositoryInterface in M2)
+  implementieren
+- RAG-Ablauf: Dokument -> Chunking -> Embedding (ueber den aktiven Provider — **Achtung**:
+  schlaegt fehl, wenn der aktive Chat-Provider Anthropic ist, siehe offene Punkte unten) ->
+  JSON-Embedding in MySQL (Phase 1; Qdrant/pgvector erst Phase 2, Bauplan Abschnitt 7)
+- Definition of Done: Bauplan Abschnitt 15, Zeile M4
 
-## Manuell testen (M2-DoD: "funktioniert ohne Frontend, curl/Postman")
+## Manuell testen
+
+**M3 (Frontend):** `[wpais_chat]` in eine beliebige Seite/einen Beitrag einfuegen (Block-Editor:
+Shortcode-Block, oder klassischer Editor). Attribute optional: `[wpais_chat mode="inline"
+welcome="Womit kann ich helfen?"]`. Assets laden nur auf Seiten, die den Shortcode tatsaechlich
+enthalten (`AssetManager::enqueue()` ist bewusst konditional). Nonce/REST-URL kommen automatisch
+per `wp_localize_script` — keine manuelle Nonce-Erzeugung mehr noetig, das WP-CLI-Vorgehen unten
+bleibt nur fuer Backend-Debugging ohne Browser relevant.
+
+**M2 (REST-DoD: "funktioniert ohne Frontend, curl/Postman")** — weiterhin so nutzbar:
 
 Auf `solar.local` (oder jedem Dev-Server mit WP-CLI):
 
@@ -66,8 +82,8 @@ curl "https://solar.local/wp-json/wpais/v1/conversations/<SESSION_TOKEN>" \
   -H "X-WP-Nonce: <NONCE_AUS_SCHRITT_1>"
 ```
 
-Voraussetzung: in den Einstellungen (WP AI Suite) einen Provider + API-Key + Standard-Modell
-hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klaren Fehlermeldung
+Voraussetzung fuer beides: in den Einstellungen (WP AI Suite) einen Provider + API-Key +
+Standard-Modell hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klaren Fehlermeldung
 (`NoActiveProviderException`).
 
 ## Bekannte Einschränkungen der Build-Umgebung
@@ -86,6 +102,14 @@ hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klaren Fehlermeldung
   WordPress-Test-Suite + Test-DB — siehe `tests/Integration/README.md` für den offenen
   Setup-Schritt. Testfälle für `WpdbApiKeyRepository` (M1) und `WpdbConversationRepository` (M2)
   liegen fertig geschrieben bereit.
+- **Node.js (v22) ist im Sandbox-Container verfügbar** (`node`/`nodejs`, kein `npm install`
+  nötig für reines `node --check`/Skripte ohne Pakete). `assets/js/wpais-chat.js` exportiert
+  seine reinen Funktionen (`renderMarkdown`, `escapeHtml`, `sanitizeUrl`, `parseSseEvent`) über
+  ein `module.exports`, das im Browser ein No-op ist (`typeof module !== 'undefined'`-Check) —
+  dadurch war ein Node-Wegwerf-Testskript möglich (17/17 grün, u. a. ein XSS-Test und ein
+  Regressionstest für einen gefundenen Bug bei Markdown-Links mit „&“ in der URL). Kein
+  `package.json`/Vitest-Setup in diesem Repo bisher — falls gewünscht, wäre das Vitest-Muster
+  aus deinen anderen Projekten übertragbar, war für M3 aber bewusst nicht Scope.
 
 ## Sicherheitshinweis — bitte zuerst erledigen
 
@@ -122,9 +146,19 @@ Projekte bleibt als Alternative offen, falls du weiterhin direkt aus der Sandbox
    Admin-UI dafür bisher.
 4. Rate-Limiting (Bauplan Abschnitt 9/M9) ist bewusst noch nicht in `/wpais/v1/chat` eingebaut —
    gehört laut Bauplan zu M9 (Security-Härtung).
+5. `wpais-chat.js`s Markdown-Renderer ist bewusst ein Subset (keine Tabellen, keine verschachtelten
+   Listen, kein CommonMark) und hat eine bekannte Kleinigkeit: Markdown-Links, deren URL selbst
+   runde Klammern enthält (z. B. `[x](https://foo.com/(bar))`), werden am ersten `)` abgeschnitten
+   — sicherheitsunkritisch (nicht-http(s)/mailto-URLs landen ohnehin auf `#`), aber kosmetisch
+   nicht ganz korrekt. Nicht behoben, um die Regex nicht unnötig zu verkomplizieren.
+6. M3 implementiert nur `mode="inline"` mit echtem CSS/Verhalten; `floating`/`popup`/`sidebar`
+   werden zwar als `data-mode`-Wert akzeptiert (`ChatWidgetRenderer::ALLOWED_MODES`), haben aber
+   noch kein eigenes Verhalten — das ist laut Bauplan M8 ("Alle 4 Display-Modi funktionieren").
+7. Kein Admin-UI, um den `[wpais_chat]`-Shortcode-Text irgendwo anzuzeigen/zu kopieren — Nutzer
+   muss ihn manuell in eine Seite einfügen. Ggf. Kandidat für einen späteren Settings-Hinweis.
 
 ## Wie im neuen Chat weitermachen
 
 `BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder verlinken, dann reicht:
-"Fahre mit M3 (Frontend-Widget) fort" — der neue Chat hat damit den vollen Kontext, ohne
+"Fahre mit M4 (Knowledge Engine) fort" — der neue Chat hat damit den vollen Kontext, ohne
 dass die Grundsatzentscheidungen erneut diskutiert werden müssen.
