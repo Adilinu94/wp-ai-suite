@@ -175,6 +175,31 @@
 	margin: 0;
 }
 
+.wpais-chat__sources {
+	display: block;
+	margin-top: 10px;
+	padding-top: 8px;
+	border-top: 1px solid var(--wpais-border);
+	font-size: 0.8em;
+	line-height: 1.6;
+	color: var(--wpais-text-muted);
+}
+
+.wpais-chat__sources-label {
+	font-family: var(--wpais-font-mono);
+	font-size: 0.95em;
+}
+
+span.wpais-chat__source {
+	color: var(--wpais-text-muted);
+}
+
+a.wpais-chat__source {
+	color: var(--wpais-primary);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
 .wpais-chat__cursor {
 	display: inline-block;
 	width: 2px;

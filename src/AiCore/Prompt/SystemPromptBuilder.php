@@ -23,6 +23,10 @@ final class SystemPromptBuilder
     public const DEFAULT_SYSTEM_PROMPT = 'Du bist ein hilfreicher Assistent auf dieser Website. '
         . 'Antworte freundlich, praezise und auf Deutsch, sofern der Nutzer erkennbar eine andere Sprache verwendet.';
 
+    private const RETRIEVED_CONTEXT_HEADER = 'Nutze die folgenden Auszuege aus der Wissensbasis, sofern sie '
+        . 'relevant sind, um die Frage zu beantworten. Sind sie nicht relevant, ignoriere sie und antworte aus '
+        . 'eigenem Wissen:';
+
     public function __construct(
         private readonly string $configuredSystemPrompt = '',
     ) {
@@ -31,11 +35,15 @@ final class SystemPromptBuilder
     /**
      * @param StoredMessage[] $history Bisherige Nachrichten dieser Konversation, aelteste zuerst,
      *        INKLUSIVE der neuen User-Nachricht (der Aufrufer persistiert sie vor diesem Aufruf).
+     * @param string $retrievedContext M5: Ergebnis von RagServiceInterface::retrieve()->contextText.
+     *        Bauplan Abschnitt 7: "danach direkt in den System-Prompt injiziert — kein Re-Ranking,
+     *        keine Hybrid-Search". Leerer String (Default) = kein RAG-Kontext, Prompt unveraendert
+     *        wie vor M5.
      * @return ChatMessage[]
      */
-    public function buildMessages(array $history): array
+    public function buildMessages(array $history, string $retrievedContext = ''): array
     {
-        $messages = [new ChatMessage(role: 'system', content: $this->currentSystemPrompt())];
+        $messages = [new ChatMessage(role: 'system', content: $this->currentSystemPrompt($retrievedContext))];
 
         foreach ($history as $stored) {
             // Defensive Rollentrennung: koennte regulaer nicht vorkommen (StoredMessage
@@ -49,8 +57,14 @@ final class SystemPromptBuilder
         return $messages;
     }
 
-    private function currentSystemPrompt(): string
+    private function currentSystemPrompt(string $retrievedContext): string
     {
-        return trim($this->configuredSystemPrompt) !== '' ? $this->configuredSystemPrompt : self::DEFAULT_SYSTEM_PROMPT;
+        $base = trim($this->configuredSystemPrompt) !== '' ? $this->configuredSystemPrompt : self::DEFAULT_SYSTEM_PROMPT;
+
+        if (trim($retrievedContext) === '') {
+            return $base;
+        }
+
+        return $base . "\n\n" . self::RETRIEVED_CONTEXT_HEADER . "\n" . $retrievedContext;
     }
 }

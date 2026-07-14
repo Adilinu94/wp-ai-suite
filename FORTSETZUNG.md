@@ -6,7 +6,7 @@
 ## Projekt
 
 Enterprise-KI-Plattform als WordPress-Plugin (Platzhaltername "WP AI Suite" / Namespace `WPAiSuite`).
-Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M5
+Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M6
 weitergearbeitet wird.
 
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
@@ -21,8 +21,8 @@ weitergearbeitet wird.
 
 ## Stand
 
-**M0, M1, M2, M3, M4 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`, `2770198`,
-`f4f715c`, `19dae1e`, siehe `git log`).
+**M0, M1, M2, M3, M4, M5 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`, `2770198`,
+`f4f715c`, `19dae1e`, `46cc847`, siehe `git log`).
 
 - **M0** — Plugin-Bootstrap, DB-Migrationen (6 Tabellen), Ordnerstruktur, DSGVO-Uninstall.
 - **M1** — `AiProviderInterface` + DTOs, `OpenAiProvider`/`AnthropicProvider`/`OpenAiCompatibleProvider`
@@ -53,18 +53,39 @@ weitergearbeitet wird.
   Dokument), `EmbeddingService` (Batch-Wrapper um `AiProviderInterface::embed()`),
   `POST /wpais/v1/documents` (Ingestion-Ausloeser, `source_type=wp_content`; volle
   Wissensbasis-Verwaltung mit Liste/Re-Index-Button ist laut Bauplan M10).
+- **M5** — `RagService` (+ `RagServiceInterface`, `RetrievalResult`, `RetrievedSource`):
+  Retrieval VOR dem Prompt-Bau (`ConversationService::handleUserMessage()` ruft
+  `RagServiceInterface::retrieve()` auf, BEVOR `SystemPromptBuilder::buildMessages()` den
+  Kontext bekommt). `SystemPromptBuilder` injiziert den Retrieval-Kontext direkt in die
+  System-Message (kein Re-Ranking, keine Hybrid-Search, exakt Abschnitt 7).
+  `ChatController` sendet ein neues `sources`-SSE-Event VOR dem ersten `token`-Event (loest bei
+  `source_type=wp_content` den echten Permalink via `get_permalink()` auf),
+  `wpais-chat.js` zeigt die Quellen kompakt unter der fertigen Antwort an. `RagService` selbst
+  bleibt WP-frei (nur ueber Ports: `VectorStoreInterface`/`EmbeddingService`/
+  `DocumentRepositoryInterface`) — `ChatController` baut es pro Request frisch mit dem gerade
+  aufgeloesten Provider, aus demselben Grund wie `ConversationService` selbst (kein Provider im
+  Container-Wiring verfuegbar).
 
-**Nächster Schritt: M5 — RAG-Integration**
-- Retrieval **vor** dem Prompt-Bau einhaengen: `VectorStoreInterface::query()` mit der Embedding
-  der User-Frage aufrufen, Top-K-Treffer in `SystemPromptBuilder`/`ConversationService`
-  einspeisen (Bauplan Abschnitt 7: "kein Re-Ranking, keine Hybrid-Search" — bewusst einfach)
-- Quellen im Chat anzeigen (welches Dokument die Antwort gestuetzt hat) — betrifft sowohl
-  `ChatController`s SSE-Events (neues Event? ergaenztes "final"-Event?) als auch `wpais-chat.js`
-- Definition of Done: Bauplan Abschnitt 15, Zeile M5
-- **Wichtig:** `DocumentIngestionService`/`ActiveProviderResolver` existieren schon (M2/M4) —
-  M5 ist im Kern Verdrahtung + Anzeige, keine neue Kern-Logik
+**Nächster Schritt: M6 — PDF/FAQ-Ingestion**
+- `PdfSource` (Upload + Textextraktion) und `FaqSource`/`custom_text` (manuelle Eintraege im
+  Admin-Bereich) implementieren — beide `KnowledgeSourceInterface` (existiert seit M4)
+- PDF-Textextraktion braucht vermutlich eine Bibliothek (z.B. `smalot/pdfparser` o.ae.) —
+  Composer-Dependency, hier mangels Packagist-Zugriff nicht testbar, siehe bekannte
+  Einschraenkungen
+- `DocumentsController::resolveSource()` (aktuell nur `wp_content`) um `pdf`/`faq` erweitern
+- Definition of Done: Bauplan Abschnitt 15, Zeile M6
 
 ## Manuell testen
+
+**M5 (RAG):** Nichts Neues zu tun — sobald ueber M4 mindestens ein Dokument erfolgreich
+verarbeitet wurde, liefert `/wpais/v1/chat` bei einer inhaltlich passenden Frage automatisch ein
+zusaetzliches `sources`-SSE-Event VOR dem ersten `token`-Event:
+```
+event: sources
+data: {"sources":[{"title":"Seitentitel","url":"https://solar.local/beispielseite/"}]}
+```
+Im `[wpais_chat]`-Widget erscheinen die Quellen automatisch unter der fertigen Antwort. Fragt man
+etwas ohne Wissensbasis-Bezug, bleibt das Event einfach aus (kein leeres Event wird gesendet).
 
 **M4 (Knowledge Engine):** Ingestion aus WP-Content ausloesen (braucht `manage_options`, also als
 eingeloggter Admin):
@@ -118,9 +139,9 @@ Standard-Modell hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klare
 - **Composer/Pest laufen hier weiterhin NICHT**: `packagist.org` ist im Sandbox-Netzwerk nicht
   erreichbar (nur github.com/npm/pypi/crates.io u.ä. sind erlaubt). `composer install` und damit
   `vendor/bin/pest` sind hier nicht ausführbar.
-- Alle M1–M4-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
+- Alle M1–M5-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
   Wegwerf-Shim laufen lassen (kein Teil des Repos), der `test()`/`expect()`/`beforeEach()` minimal
-  nachbildet und die echten Testdateien unveraendert einliest — 85/85 gruen. **Bitte trotzdem
+  nachbildet und die echten Testdateien unveraendert einliest — 99/99 gruen. **Bitte trotzdem
   einmal lokal `composer install && vendor/bin/pest` laufen lassen**, um mit dem echten
   Test-Runner gegenzuchecken.
 - Integration-Tests (`tests/Integration/`, `WP_UnitTestCase`) brauchen zusätzlich eine
@@ -194,9 +215,18 @@ Projekte bleibt als Alternative offen, falls du weiterhin direkt aus der Sandbox
 10. Nur `post_type IN (post, page)`, nur `post_status = publish` wird indexiert
     (`WordPressContentSource`-Konstruktor nimmt optional andere Post-Types entgegen, Default ist
     aber hartkodiert) — kein Admin-UI, um das einzustellen.
+11. RAG-Retrieval-Query = die rohe User-Nachricht, ohne Anreicherung durch bisherige
+    Konversationshistorie (Bauplan Abschnitt 7: bewusst simpel, "kein Re-Ranking, keine
+    Hybrid-Search"). Eine Anschlussfrage wie "und wie teuer?" nach einer vorherigen Frage zu
+    einem bestimmten Produkt findet das Produkt-Dokument dadurch u.U. nicht zuverlaessig — waere
+    ein Kandidat fuer eine spaetere Verbesserung (Historie in die Retrieval-Query einbeziehen),
+    aber kein Bug im engeren Sinn, sondern die dokumentierte Phase-1-Grenze.
+12. Jede /chat-Anfrage macht IMMER einen Retrieval-Versuch (eigener embed()-API-Call), auch wenn
+    die Wissensbasis leer ist — kein Kurzschluss/Caching. Bei komplett leerer Wissensbasis ist das
+    ein unnoetiger, aber billiger zusaetzlicher API-Call pro Nachricht.
 
 ## Wie im neuen Chat weitermachen
 
 `BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder verlinken, dann reicht:
-"Fahre mit M5 (RAG-Integration) fort" — der neue Chat hat damit den vollen Kontext, ohne
+"Fahre mit M6 (PDF/FAQ-Ingestion) fort" — der neue Chat hat damit den vollen Kontext, ohne
 dass die Grundsatzentscheidungen erneut diskutiert werden müssen.

@@ -14,6 +14,9 @@ final class FakeVectorStore implements VectorStoreInterface
     /** @var array<int, string[]> Aufzeichnung der upsert()-Aufrufe fuer Assertions. */
     public array $upsertCalls = [];
 
+    /** @var array<array{chunk_id:string, score:float, metadata:array}> Von query() zurueckgegeben, Default leer. */
+    public array $nextQueryResult = [];
+
     public function upsert(string $chunkId, array $vector, array $metadata): void
     {
         $this->stored[$chunkId] = ['vector' => $vector, 'metadata' => $metadata];
@@ -22,7 +25,7 @@ final class FakeVectorStore implements VectorStoreInterface
 
     public function query(array $vector, int $topK = 5, array $filter = []): array
     {
-        return [];
+        return $this->nextQueryResult;
     }
 
     public function delete(string $chunkId): void

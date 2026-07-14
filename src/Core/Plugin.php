@@ -146,6 +146,8 @@ final class Plugin
                 $c->get(ConversationRepositoryInterface::class),
                 $c->get(SystemPromptBuilder::class),
                 $c->get(ActiveProviderResolver::class),
+                $c->get(VectorStoreInterface::class),
+                $c->get(DocumentRepositoryInterface::class),
             );
         });
 

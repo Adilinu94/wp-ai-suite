@@ -11,10 +11,22 @@ use WPAiSuite\AiCore\Prompt\SystemPromptBuilder;
 use WPAiSuite\AiCore\Provider\ActiveProviderResolver;
 use WPAiSuite\AiCore\Provider\Contract\ProviderException;
 use WPAiSuite\AiCore\Provider\NoActiveProviderException;
+use WPAiSuite\Knowledge\DocumentRepositoryInterface;
+use WPAiSuite\Knowledge\Embedding\EmbeddingService;
+use WPAiSuite\Knowledge\RagService;
+use WPAiSuite\Knowledge\RetrievedSource;
+use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
 
 /**
  * POST /wpais/v1/chat — Bauplan Abschnitt 12. M2-DoD: "funktioniert ohne Frontend (curl/Postman),
- * Streaming via SSE, Nachrichten landen in wpais_messages".
+ * Streaming via SSE, Nachrichten landen in wpais_messages". Seit M5 zusaetzlich: RAG-Retrieval
+ * vor dem Prompt-Bau, Quellen als eigenes "sources"-SSE-Event VOR dem ersten "token"-Event (siehe
+ * ConversationService::handleUserMessage()-Docblock — Retrieval laeuft vor dem Provider-Aufruf).
+ *
+ * RagService wird — wie ConversationService selbst — ERST INNERHALB von handle() gebaut, mit dem
+ * dort frisch aufgeloesten Provider (derselbe Provider fuer Chat UND Embedding, Abschnitt 7:
+ * "ueber den aktiven Provider"). Ein im Container vorgefertigtes RagService waere zwangslaeufig
+ * an EINEN zum Wiring-Zeitpunkt noch unbekannten Provider gebunden.
  *
  * Auth (Abschnitt 9): Nonce (CSRF-Schutz, auch fuer anonyme Besucher moeglich) +
  * Session-Token-Bindung (die eigentliche Besitz-Pruefung, siehe ConversationService). BEWUSST
@@ -38,6 +50,8 @@ final class ChatController
         private readonly ConversationRepositoryInterface $conversations,
         private readonly SystemPromptBuilder $promptBuilder,
         private readonly ActiveProviderResolver $providerResolver,
+        private readonly VectorStoreInterface $vectorStore,
+        private readonly DocumentRepositoryInterface $documents,
     ) {
     }
 
@@ -82,7 +96,8 @@ final class ChatController
             return new \WP_Error('wpais_no_active_provider', $e->getMessage(), ['status' => 503]);
         }
 
-        $conversationService = new ConversationService($this->conversations, $this->promptBuilder, $provider, $model);
+        $ragService = new RagService($this->vectorStore, new EmbeddingService($provider), $this->documents);
+        $conversationService = new ConversationService($this->conversations, $this->promptBuilder, $provider, $model, $ragService);
 
         $sessionTokenParam = $request->get_param('session_token');
         $sessionToken = is_string($sessionTokenParam) && $sessionTokenParam !== '' ? $sessionTokenParam : null;
@@ -104,6 +119,9 @@ final class ChatController
                 function (string $token): void {
                     $this->sendSseEvent('token', ['delta' => $token]);
                 },
+                function (array $sources): void {
+                    $this->sendSources($sources);
+                },
             );
 
             $this->sendSseEvent('final', [
@@ -118,6 +136,34 @@ final class ChatController
 
         $this->endSse();
         exit;
+    }
+
+    /**
+     * M5: "sources"-SSE-Event, gesendet sobald Retrieval abgeschlossen ist (vor dem ersten
+     * "token"-Event). Loest bei source_type="wp_content" den echten Permalink auf — das ist der
+     * einzige Grund, warum diese Uebersetzung hier in der WP-gekoppelten Rest-Schicht passiert
+     * und nicht in RagService (das bleibt WP-frei).
+     *
+     * @param RetrievedSource[] $sources
+     */
+    private function sendSources(array $sources): void
+    {
+        if ($sources === []) {
+            return;
+        }
+
+        $payload = array_map(function (RetrievedSource $source): array {
+            $url = null;
+
+            if ($source->sourceType === 'wp_content' && $source->sourceRef !== null) {
+                $permalink = get_permalink((int) $source->sourceRef);
+                $url = $permalink !== false ? $permalink : null;
+            }
+
+            return ['title' => $source->title, 'url' => $url];
+        }, $sources);
+
+        $this->sendSseEvent('sources', ['sources' => $payload]);
     }
 
     private function startSse(): void

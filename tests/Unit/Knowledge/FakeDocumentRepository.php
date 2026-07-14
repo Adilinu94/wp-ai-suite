@@ -32,6 +32,11 @@ final class FakeDocumentRepository implements DocumentRepositoryInterface
         return null;
     }
 
+    public function findById(int $documentId): ?StoredDocument
+    {
+        return $this->documents[$documentId] ?? null;
+    }
+
     public function upsertDocument(string $sourceType, ?string $sourceRef, string $title, string $checksum): StoredDocument
     {
         $existing = $this->findBySourceTypeAndRef($sourceType, $sourceRef);

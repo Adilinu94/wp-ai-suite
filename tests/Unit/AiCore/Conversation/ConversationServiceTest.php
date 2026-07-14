@@ -6,17 +6,22 @@ use WPAiSuite\AiCore\Conversation\ConversationAccessDeniedException;
 use WPAiSuite\AiCore\Conversation\ConversationService;
 use WPAiSuite\AiCore\Prompt\SystemPromptBuilder;
 use WPAiSuite\AiCore\Provider\Contract\ChatResponse;
+use WPAiSuite\Knowledge\RetrievalResult;
+use WPAiSuite\Knowledge\RetrievedSource;
 use WPAiSuite\Tests\Unit\AiCore\Conversation\FakeAiProvider;
 use WPAiSuite\Tests\Unit\AiCore\Conversation\FakeConversationRepository;
+use WPAiSuite\Tests\Unit\AiCore\Conversation\FakeRagService;
 
 beforeEach(function (): void {
     $this->repository = new FakeConversationRepository();
     $this->provider = new FakeAiProvider();
+    $this->ragService = new FakeRagService();
     $this->service = new ConversationService(
         $this->repository,
         new SystemPromptBuilder('Test-System-Prompt'),
         $this->provider,
         'fake-model-v1',
+        $this->ragService,
     );
 });
 
@@ -137,4 +142,82 @@ test('getHistory() returns the messages stored for a conversation', function ():
     $this->service->handleUserMessage($conversation, 'Frage', function (): void {});
 
     expect($this->service->getHistory($conversation))->toHaveCount(2);
+});
+
+test('M5: queries the RAG service with the raw user message', function (): void {
+    $conversation = $this->repository->create('tok-1', null);
+    $this->provider->queueResponse(new ChatResponse(content: 'Antwort', tokensInput: 1, tokensOutput: 1));
+
+    $this->service->handleUserMessage($conversation, 'Was kostet das Produkt?', function (): void {});
+
+    expect($this->ragService->receivedQueries)->toBe(['Was kostet das Produkt?']);
+});
+
+test('M5: injects retrieved context into the system message sent to the provider', function (): void {
+    $conversation = $this->repository->create('tok-1', null);
+    $this->ragService->queueResult(new RetrievalResult(contextText: 'Der Preis betraegt 100 Euro.', sources: []));
+    $this->provider->queueResponse(new ChatResponse(content: 'Antwort', tokensInput: 1, tokensOutput: 1));
+
+    $this->service->handleUserMessage($conversation, 'Was kostet das?', function (): void {});
+
+    $sentRequest = $this->provider->receivedRequests[0];
+
+    expect($sentRequest->messages[0]->role)->toBe('system')
+        ->and($sentRequest->messages[0]->content)->toContain('Test-System-Prompt')
+        ->and($sentRequest->messages[0]->content)->toContain('Der Preis betraegt 100 Euro.');
+});
+
+test('M5: returned ChatCompletionResult carries the retrieved sources', function (): void {
+    $conversation = $this->repository->create('tok-1', null);
+    $source = new RetrievedSource(1, 'Preisliste', 'wp_content', '42');
+    $this->ragService->queueResult(new RetrievalResult(contextText: 'Kontext.', sources: [$source]));
+    $this->provider->queueResponse(new ChatResponse(content: 'Antwort', tokensInput: 1, tokensOutput: 1));
+
+    $result = $this->service->handleUserMessage($conversation, 'Frage', function (): void {});
+
+    expect($result->sources)->toHaveCount(1)
+        ->and($result->sources[0]->title)->toBe('Preisliste');
+});
+
+test('M5: onSources fires before the provider is called, and before any onToken call', function (): void {
+    $conversation = $this->repository->create('tok-1', null);
+    $source = new RetrievedSource(1, 'Preisliste', 'wp_content', '42');
+    $this->ragService->queueResult(new RetrievalResult(contextText: 'Kontext.', sources: [$source]));
+    $this->provider->queueResponse(
+        new ChatResponse(content: 'Antwort', tokensInput: 1, tokensOutput: 1),
+        streamTokens: ['Ant', 'wort'],
+    );
+
+    $events = [];
+
+    $this->service->handleUserMessage(
+        $conversation,
+        'Frage',
+        function (string $token) use (&$events): void {
+            $events[] = 'token:' . $token;
+        },
+        function (array $sources) use (&$events): void {
+            $events[] = 'sources:' . count($sources);
+        },
+    );
+
+    expect($events)->toBe(['sources:1', 'token:Ant', 'token:wort']);
+});
+
+test('M5: onSources is optional and can be omitted entirely', function (): void {
+    $conversation = $this->repository->create('tok-1', null);
+    $this->provider->queueResponse(new ChatResponse(content: 'Antwort', tokensInput: 1, tokensOutput: 1));
+
+    $result = $this->service->handleUserMessage($conversation, 'Frage', function (): void {});
+
+    expect($result->content)->toBe('Antwort');
+});
+
+test('M5: an empty RAG result (no matches) leaves the system prompt exactly as configured', function (): void {
+    $conversation = $this->repository->create('tok-1', null);
+    $this->provider->queueResponse(new ChatResponse(content: 'Antwort', tokensInput: 1, tokensOutput: 1));
+
+    $this->service->handleUserMessage($conversation, 'Frage ohne Wissensbasis-Bezug', function (): void {});
+
+    expect($this->provider->receivedRequests[0]->messages[0]->content)->toBe('Test-System-Prompt');
 });

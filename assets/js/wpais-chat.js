@@ -252,6 +252,43 @@
 			return bubble;
 		}
 
+		/**
+		 * M5: haengt eine kompakte Quellenliste ans Ende einer fertigen Antwort-Bubble an.
+		 * source.url ist null, wenn ChatController keinen Permalink aufloesen konnte (z.B.
+		 * source_type noch nicht wp_content) — dann nur Titel als reiner Text, kein Link.
+		 */
+		function appendSources(bubble, sources) {
+			var container = document.createElement('div');
+			container.className = 'wpais-chat__sources';
+
+			var label = document.createElement('span');
+			label.className = 'wpais-chat__sources-label';
+			label.textContent = __('Quellen:');
+			container.appendChild(label);
+
+			sources.forEach(function (source, index) {
+				if (index > 0) {
+					container.appendChild(document.createTextNode(' \u00b7 '));
+				} else {
+					container.appendChild(document.createTextNode(' '));
+				}
+
+				var el = document.createElement(source.url ? 'a' : 'span');
+				el.className = 'wpais-chat__source';
+				el.textContent = source.title;
+
+				if (source.url) {
+					el.setAttribute('href', sanitizeUrl(source.url));
+					el.setAttribute('target', '_blank');
+					el.setAttribute('rel', 'noopener noreferrer');
+				}
+
+				container.appendChild(el);
+			});
+
+			bubble.appendChild(container);
+		}
+
 		function showWelcome() {
 			addMessage('assistant', renderMarkdown(welcome));
 		}
@@ -302,6 +339,7 @@
 			addMessage('user', escapeHtml(text));
 			var bubble = addMessage('assistant', '<span class="wpais-chat__cursor"></span>', { streaming: true });
 			var rawContent = '';
+			var pendingSources = [];
 
 			fetch(window.wpaisChatConfig.chatUrl, {
 				method: 'POST',
@@ -346,6 +384,8 @@
 
 								if (parsed.event === 'conversation' && parsed.data.session_token) {
 									persistToken(parsed.data.session_token);
+								} else if (parsed.event === 'sources') {
+									pendingSources = parsed.data.sources || [];
 								} else if (parsed.event === 'token') {
 									rawContent += parsed.data.delta;
 									bubble.innerHTML = renderMarkdown(rawContent) + '<span class="wpais-chat__cursor"></span>';
@@ -353,6 +393,9 @@
 								} else if (parsed.event === 'final') {
 									bubble.innerHTML = renderMarkdown(parsed.data.content);
 									bubble.classList.remove('wpais-chat__bubble--streaming');
+									if (pendingSources.length) {
+										appendSources(bubble, pendingSources);
+									}
 								} else if (parsed.event === 'error') {
 									bubble.innerHTML = renderMarkdown(parsed.data.message || __('Etwas ist schiefgelaufen.'));
 									bubble.classList.add('wpais-chat__bubble--error');

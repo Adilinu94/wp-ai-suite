@@ -53,3 +53,34 @@ test('never re-injects a stored message as the system role', function (): void {
         ->and($messages[0]->content)->toBe('System-Prompt')
         ->and($messages[1]->role)->toBe('user');
 });
+
+test('M5: leaves the system prompt unchanged when no retrieved context is given', function (): void {
+    $builder = new SystemPromptBuilder('System-Prompt');
+
+    $messages = $builder->buildMessages([], retrievedContext: '');
+
+    expect($messages[0]->content)->toBe('System-Prompt');
+});
+
+test('M5: appends retrieved RAG context to the system message when present', function (): void {
+    $builder = new SystemPromptBuilder('System-Prompt');
+
+    $messages = $builder->buildMessages([], retrievedContext: 'Der Preis betraegt 100 Euro.');
+
+    expect($messages[0]->role)->toBe('system')
+        ->and($messages[0]->content)->toContain('System-Prompt')
+        ->and($messages[0]->content)->toContain('Der Preis betraegt 100 Euro.');
+});
+
+test('M5: retrieved context never becomes its own separate message, only extends the system message', function (): void {
+    $builder = new SystemPromptBuilder('System-Prompt');
+
+    $messages = $builder->buildMessages(
+        [new StoredMessage(role: 'user', content: 'Frage')],
+        retrievedContext: 'Kontext aus der Wissensbasis.',
+    );
+
+    expect($messages)->toHaveCount(2)
+        ->and($messages[0]->role)->toBe('system')
+        ->and($messages[1]->role)->toBe('user');
+});

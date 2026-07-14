@@ -44,6 +44,18 @@ final class WpdbDocumentRepository implements DocumentRepositoryInterface
         return is_array($row) ? $this->hydrate($row) : null;
     }
 
+    public function findById(int $documentId): ?StoredDocument
+    {
+        $table = $this->documentsTable();
+
+        $row = $this->wpdb->get_row(
+            $this->wpdb->prepare("SELECT * FROM {$table} WHERE id = %d", $documentId),
+            ARRAY_A,
+        );
+
+        return is_array($row) ? $this->hydrate($row) : null;
+    }
+
     public function upsertDocument(string $sourceType, ?string $sourceRef, string $title, string $checksum): StoredDocument
     {
         $existing = $this->findBySourceTypeAndRef($sourceType, $sourceRef);

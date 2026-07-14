@@ -8,12 +8,14 @@ use WPAiSuite\AiCore\Conversation\Repository\ConversationRepositoryInterface;
 use WPAiSuite\AiCore\Prompt\SystemPromptBuilder;
 use WPAiSuite\AiCore\Provider\Contract\AiProviderInterface;
 use WPAiSuite\AiCore\Provider\Contract\ChatRequest;
+use WPAiSuite\Knowledge\RagServiceInterface;
 
 /**
- * Herzstueck von M2. Kennt weder wpdb noch WordPress-REST-Mechanik direkt — beide stecken hinter
- * ConversationRepositoryInterface bzw. werden von aussen (ChatController) injiziert. Dadurch ist
- * die eigentliche Orchestrierungs-Logik ohne WP-Bootstrap unit-testbar (Abschnitt 14), obwohl sie
- * am Ende von einem WP-REST-Endpunkt aufgerufen wird.
+ * Herzstueck von M2, seit M5 inkl. RAG-Retrieval. Kennt weder wpdb noch WordPress-REST-Mechanik
+ * direkt — die stecken hinter ConversationRepositoryInterface/RagServiceInterface bzw. werden von
+ * aussen (ChatController) injiziert. Dadurch ist die eigentliche Orchestrierungs-Logik ohne
+ * WP-Bootstrap unit-testbar (Abschnitt 14), obwohl sie am Ende von einem WP-REST-Endpunkt
+ * aufgerufen wird.
  *
  * $provider und $model sind bewusst PRO INSTANZ fest (nicht pro Aufruf neu aufgeloest) — die
  * Aufloesung "welcher Provider ist gerade aktiv" ist WordPress-Options-Zugriff und passiert daher
@@ -26,6 +28,7 @@ final class ConversationService
         private readonly SystemPromptBuilder $promptBuilder,
         private readonly AiProviderInterface $provider,
         private readonly string $model,
+        private readonly RagServiceInterface $ragService,
     ) {
     }
 
@@ -69,18 +72,31 @@ final class ConversationService
     }
 
     /**
-     * Persistiert die User-Nachricht, ruft den Provider (streamend) auf, persistiert die
+     * Persistiert die User-Nachricht, holt RAG-Kontext (M5: Bauplan Abschnitt 15 —
+     * "Retrieval laeuft vor Prompt-Bau"), ruft den Provider (streamend) auf, persistiert die
      * Assistant-Antwort + Usage-Log. $onToken wird pro Streaming-Chunk aufgerufen (z.B. um es als
-     * SSE-Event auszugeben) — diese Methode selbst weiss nichts von SSE/HTTP.
+     * SSE-Event auszugeben); $onSources (falls gesetzt) wird EINMALIG aufgerufen, sobald Retrieval
+     * abgeschlossen ist — also VOR dem ersten $onToken-Aufruf, da Retrieval definitionsgemaess vor
+     * dem eigentlichen Provider-Aufruf laeuft. Diese Methode selbst weiss nichts von SSE/HTTP.
      *
      * @param callable(string): void $onToken
+     * @param null|callable(\WPAiSuite\Knowledge\RetrievedSource[]): void $onSources
      */
-    public function handleUserMessage(Conversation $conversation, string $userMessage, callable $onToken): ChatCompletionResult
+    public function handleUserMessage(Conversation $conversation, string $userMessage, callable $onToken, ?callable $onSources = null): ChatCompletionResult
     {
         $this->conversations->appendMessage($conversation->id, new StoredMessage(role: 'user', content: $userMessage));
 
+        $retrieval = $this->ragService->retrieve($userMessage);
+
+        if ($onSources !== null) {
+            $onSources($retrieval->sources);
+        }
+
         $history = $this->conversations->getMessages($conversation->id);
-        $chatRequest = new ChatRequest(messages: $this->promptBuilder->buildMessages($history), model: $this->model);
+        $chatRequest = new ChatRequest(
+            messages: $this->promptBuilder->buildMessages($history, $retrieval->contextText),
+            model: $this->model,
+        );
 
         $response = $this->provider->chatStream($chatRequest, $onToken);
 
@@ -106,6 +122,7 @@ final class ConversationService
             finishReason: $response->finishReason,
             tokensInput: $response->tokensInput,
             tokensOutput: $response->tokensOutput,
+            sources: $retrieval->sources,
         );
     }
 

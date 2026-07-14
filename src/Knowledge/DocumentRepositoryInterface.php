@@ -15,6 +15,9 @@ interface DocumentRepositoryInterface
 {
     public function findBySourceTypeAndRef(string $sourceType, ?string $sourceRef): ?StoredDocument;
 
+    /** M5: Titel/Referenz eines Dokuments per ID nachschlagen, fuer die Quellenanzeige im Chat. */
+    public function findById(int $documentId): ?StoredDocument;
+
     /** Legt ein neues Dokument (status=pending) an, oder aktualisiert Titel/Checksum eines bestehenden. */
     public function upsertDocument(string $sourceType, ?string $sourceRef, string $title, string $checksum): StoredDocument;
 
