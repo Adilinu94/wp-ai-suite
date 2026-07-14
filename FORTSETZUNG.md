@@ -22,7 +22,7 @@ weitergearbeitet wird.
 ## Stand
 
 **M0, M1, M2, M3, M4, M5 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`, `2770198`,
-`f4f715c`, `19dae1e`, `46cc847`, siehe `git log`).
+`f4f715c`, `19dae1e`, `46cc847`, `902e7ee`, siehe `git log`).
 
 - **M0** — Plugin-Bootstrap, DB-Migrationen (6 Tabellen), Ordnerstruktur, DSGVO-Uninstall.
 - **M1** — `AiProviderInterface` + DTOs, `OpenAiProvider`/`AnthropicProvider`/`OpenAiCompatibleProvider`
@@ -180,7 +180,7 @@ Projekte bleibt als Alternative offen, falls du weiterhin direkt aus der Sandbox
 2. Erster interner Testkunde für M11 (Vorschlag: gfr-industriemontagen.de)
 3. Lizenzserver-Wahl für Phase 2 (Freemius vs. EDD Software Licensing vs. Eigenbau)
 
-## Weitere offene Punkte aus M1/M2 (nicht blockierend, aber im Hinterkopf behalten)
+## Weitere offene Punkte aus M1–M5 (nicht blockierend, aber im Hinterkopf behalten)
 
 1. `AnthropicProvider::embed()` wirft `UnsupportedCapabilityException` (Anthropic hat keine
    Embeddings-API) — für M4 (Knowledge Engine) muss ein embeddings-fähiger Provider konfiguriert
