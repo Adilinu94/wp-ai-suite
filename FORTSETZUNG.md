@@ -6,7 +6,7 @@
 ## Projekt
 
 Enterprise-KI-Plattform als WordPress-Plugin (Platzhaltername "WP AI Suite" / Namespace `WPAiSuite`).
-Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M6
+Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M7
 weitergearbeitet wird.
 
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
@@ -21,8 +21,8 @@ weitergearbeitet wird.
 
 ## Stand
 
-**M0, M1, M2, M3, M4, M5 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`, `2770198`,
-`f4f715c`, `19dae1e`, `46cc847`, `902e7ee`, siehe `git log`).
+**M0, M1, M2, M3, M4, M5, M6 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`,
+`2770198`, `f4f715c`, `19dae1e`, `46cc847`, `902e7ee`, `5d62325`, siehe `git log`).
 
 - **M0** — Plugin-Bootstrap, DB-Migrationen (6 Tabellen), Ordnerstruktur, DSGVO-Uninstall.
 - **M1** — `AiProviderInterface` + DTOs, `OpenAiProvider`/`AnthropicProvider`/`OpenAiCompatibleProvider`
@@ -65,17 +65,71 @@ weitergearbeitet wird.
   `DocumentRepositoryInterface`) — `ChatController` baut es pro Request frisch mit dem gerade
   aufgeloesten Provider, aus demselben Grund wie `ConversationService` selbst (kein Provider im
   Container-Wiring verfuegbar).
+- **M6** — `PdfSource` + `FaqSource` (Letztere deckt sowohl `faq` als auch `custom_text` ab, EINE
+  Klasse, siehe Bauplan Abschnitt 2). Beide bewusst WP-Bootstrap-frei gehalten (anders als
+  `WordPressContentSource` in M4): `PdfSource` bekommt bereits aufgeloeste Dateipfade
+  (`PdfFileReference`) statt WP-Anhang-IDs, die WP-Kopplung (`get_attached_file()`/
+  `get_the_title()`) sitzt in `DocumentsController::resolvePdfSource()`; `FaqSource` nutzt
+  `strip_tags()` statt `wp_strip_all_tags()` (Inhalt kommt nur von `manage_options`-Admins, siehe
+  Docblock). `PdfTextExtractorInterface`-Port (analog `HttpTransportInterface` aus M1) +
+  `SmalotPdfTextExtractor`-Adapter um `smalot/pdfparser` (Composer-Dependency, `^2.12`, hier
+  mangels Packagist-Zugriff nicht installier-/testbar). `RawDocument` um optionales
+  `$extractionError` erweitert: laesst eine Quelle einen Extraktionsfehler pro Element isoliert
+  melden (`DocumentIngestionService::ingestOne()` behandelt es wie jeden anderen Fehlschlag,
+  markFailed + weiter mit dem naechsten Dokument) statt mitten in `fetch()`s Generator zu werfen,
+  was die GESAMTE foreach-Schleife abgebrochen haette. `DocumentsController::resolveSource()` um
+  `pdf`/`faq`/`custom_text` erweitert (siehe "Manuell testen" unten fuer die Request-Form). PDF-
+  "Upload" laeuft bewusst ueber eine schon vorhandene WP-Mediathek-Anhang-ID, kein eigenes
+  multipart-Handling in diesem Endpunkt (Begruendung: Docblock `DocumentsController`).
 
-**Nächster Schritt: M6 — PDF/FAQ-Ingestion**
-- `PdfSource` (Upload + Textextraktion) und `FaqSource`/`custom_text` (manuelle Eintraege im
-  Admin-Bereich) implementieren — beide `KnowledgeSourceInterface` (existiert seit M4)
-- PDF-Textextraktion braucht vermutlich eine Bibliothek (z.B. `smalot/pdfparser` o.ae.) —
-  Composer-Dependency, hier mangels Packagist-Zugriff nicht testbar, siehe bekannte
-  Einschraenkungen
-- `DocumentsController::resolveSource()` (aktuell nur `wp_content`) um `pdf`/`faq` erweitern
-- Definition of Done: Bauplan Abschnitt 15, Zeile M6
+**Nächster Schritt: M7 — Tool Engine**
+- `Tools/Contract/{ToolInterface,ToolResult,ToolExecutionContext}` + `ToolRegistry` implementieren
+  (Bauplan Abschnitt 8) — `src/Tools/` ist bisher nur der leere M0-Namespace-Stub
+- `KnowledgeSearchTool` (ruft `RagServiceInterface::retrieve()`) und
+  `WooCommerceProductSearchTool` (`wc_get_products()`-Wrapper, read-only) als erste zwei Tools
+- Provider-Seite ist bereits vorbereitet (M1): `ChatRequest::$tools`, `ToolDefinition`, `ToolCall`,
+  `AiProviderInterface::supportsTools()` existieren schon — pruefen, ob/wie `ConversationService`
+  (M2) Tools an den Provider durchreichen und `ToolCall`-Antworten in einer Schleife (Tool
+  ausfuehren, Ergebnis als `tool`-Rolle zurueck an den Provider) verarbeiten muss; das ist in M2
+  noch nicht gebaut worden (kein Function-Calling-Loop bisher)
+- Definition of Done: Bauplan Abschnitt 15, Zeile M7
 
 ## Manuell testen
+
+**M6 (PDF/FAQ-Ingestion):** Alle drei Aufrufe brauchen `manage_options` (eingeloggter Admin,
+Nonce wie in Schritt 1 der M2-Anleitung unten).
+
+PDF: braucht zuerst eine Anhang-ID aus der WP-Mediathek (z.B. vorher ganz normal ueber den
+Admin-Uploader hochladen, oder `POST /wp-json/wp/v2/media` mit der Datei im Body), dann:
+```bash
+curl -X POST "https://solar.local/wp-json/wpais/v1/documents" \
+  -H "X-WP-Nonce: <NONCE>" \
+  -H "Content-Type: application/json" \
+  -d '{"source_type":"pdf","attachment_ids":[123]}'
+```
+
+FAQ (Frage/Antwort-Paare, `ref` ist ein selbst vergebener stabiler Schluessel — erneuter Aufruf
+mit demselben `ref` aktualisiert den Eintrag statt ihn zu duplizieren):
+```bash
+curl -X POST "https://solar.local/wp-json/wpais/v1/documents" \
+  -H "X-WP-Nonce: <NONCE>" \
+  -H "Content-Type: application/json" \
+  -d '{"source_type":"faq","entries":[{"ref":"versandkosten","question":"Wie hoch sind die Versandkosten?","answer":"Innerhalb Deutschlands pauschal 4,90 EUR."}]}'
+```
+
+custom_text (freier Text, z.B. AGB-Auszug oder Firmenprofil):
+```bash
+curl -X POST "https://solar.local/wp-json/wpais/v1/documents" \
+  -H "X-WP-Nonce: <NONCE>" \
+  -H "Content-Type: application/json" \
+  -d '{"source_type":"custom_text","entries":[{"ref":"ueber-uns","title":"Über uns","text":"Wir sind ein Team aus ..."}]}'
+```
+
+Antwort bei allen dreien wie bei M4: `{processed, skipped_unchanged, failed, errors}`. Ein
+absichtlich kaputter Test (z.B. `attachment_ids` mit einer nicht existierenden ID, oder `entries`
+ohne `ref`) sollte je nach Fehlerart entweder direkt `400` liefern (fehlendes Pflichtfeld) oder in
+`errors[]` auftauchen (Extraktion fehlgeschlagen, aber Request selbst war valide) — nicht die
+anderen Eintraege im selben Request verhindern.
 
 **M5 (RAG):** Nichts Neues zu tun — sobald ueber M4 mindestens ein Dokument erfolgreich
 verarbeitet wurde, liefert `/wpais/v1/chat` bei einer inhaltlich passenden Frage automatisch ein
@@ -134,16 +188,26 @@ Standard-Modell hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klare
 
 ## Bekannte Einschränkungen der Build-Umgebung
 
-- Der Sandbox-Container **hat inzwischen PHP** (8.3, per `apt-get install php-cli php-mbstring
-  php-xml`) — anders als beim M0-Sandbox-Stand. `php -l` läuft problemlos über alle Dateien.
+- Der Sandbox-Container **braucht PHP jede Session neu** (8.3, per `apt-get install php-cli
+  php-mbstring php-xml`) — jede Sandbox ist ein frischer Container, nichts von hier persistiert.
+  `php -l` läuft problemlos über alle Dateien. **Neu seit M6:** `apt-get update` schlaegt hier
+  sofort fehl, weil unter `/etc/apt/sources.list.d/nodesource.sources` ein Node.js-Repo
+  (`deb.nodesource.com`) eingetragen ist, das im Sandbox-Netzwerk nicht erreichbar ist (403) —
+  diese Datei erst nach `/tmp/` verschieben, dann laeuft `apt-get update`/`install` normal (Node
+  selbst ist trotzdem vorinstalliert nutzbar, nur dessen Paket-Repo ist betroffen).
 - **Composer/Pest laufen hier weiterhin NICHT**: `packagist.org` ist im Sandbox-Netzwerk nicht
   erreichbar (nur github.com/npm/pypi/crates.io u.ä. sind erlaubt). `composer install` und damit
-  `vendor/bin/pest` sind hier nicht ausführbar.
-- Alle M1–M5-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
+  `vendor/bin/pest` sind hier nicht ausführbar — betrifft ab M6 zusaetzlich `smalot/pdfparser`
+  (composer.json-Eintrag ist ungetestet gegen die echte Bibliothek; `SmalotPdfTextExtractor` ist
+  deshalb bewusst NICHT Teil der Unit-Test-Suite, siehe dortiger Docblock).
+- Alle M1–M6-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
   Wegwerf-Shim laufen lassen (kein Teil des Repos), der `test()`/`expect()`/`beforeEach()` minimal
-  nachbildet und die echten Testdateien unveraendert einliest — 99/99 gruen. **Bitte trotzdem
-  einmal lokal `composer install && vendor/bin/pest` laufen lassen**, um mit dem echten
-  Test-Runner gegenzuchecken.
+  nachbildet und die echten Testdateien unveraendert einliest — 110/110 gruen (99 aus M1-M5 +
+  11 neue aus M6). **Bitte trotzdem einmal lokal `composer install && vendor/bin/pest` laufen
+  lassen**, um mit dem echten Test-Runner gegenzuchecken — das ist der einzige Weg, wie
+  `SmalotPdfTextExtractor` gegen die echte `smalot/pdfparser`-Klasse ueberhaupt geprüft wird; ein
+  kurzer manueller Test mit einer echten PDF-Datei (siehe "Manuell testen" oben) waere zusaetzlich
+  sinnvoll, bevor M6 als wirklich fertig gilt.
 - Integration-Tests (`tests/Integration/`, `WP_UnitTestCase`) brauchen zusätzlich eine
   WordPress-Test-Suite + Test-DB — siehe `tests/Integration/README.md` für den offenen
   Setup-Schritt. Testfälle für `WpdbApiKeyRepository` (M1), `WpdbConversationRepository` (M2)
@@ -159,20 +223,30 @@ Standard-Modell hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klare
 
 ## Sicherheitshinweis — bitte zuerst erledigen
 
-**Zwei GitHub-Tokens sind inzwischen im Klartext im Chatverlauf gelandet:**
-1. Das Token, das M0 gepusht hat (bereits im vorherigen FORTSETZUNG.md-Stand vermerkt).
-2. Ein weiteres Token (`ghp_...VKySPo03jbVu`-Suffix), das für den M1/M2-Push in diesem Chat direkt
-   im Nachrichtentext geteilt wurde.
+**Zwei GitHub-Tokens sind im Klartext im Chatverlauf gelandet, eines davon zweimal:**
+1. Das Token, das M0 gepusht hat (seit dem allerersten FORTSETZUNG.md-Stand vermerkt).
+2. Ein zweites Token (`ghp_...VKySPo03jbVu`-Suffix), geteilt für den M1/M2-Push — UND erneut
+   geteilt (derselbe Token, nicht rotiert) für den M6-Push in dieser Session, trotz der
+   Rotations-Empfehlung im vorherigen FORTSETZUNG.md-Stand. Vor dem M6-Push wurde der Scope kurz
+   geprüft: `admin:org, admin:repo_hook, delete:packages, delete_repo, notifications, project,
+   repo, user, workflow, write:packages` — voller Classic-Scope, nicht auf `wp-ai-suite`
+   eingeschränkt (kann alle privaten Repos des Accounts löschen/ändern, Org-Settings anfassen).
+   2FA war beim Check zusätzlich auf dem Account deaktiviert.
 
 **Bitte beide auf GitHub revoken/rotieren** (Settings → Developer settings → Personal access
 tokens). Keines der beiden liegt noch in `.git/config` oder sonstwo im Sandbox-Dateisystem — es
 wurde jeweils direkt nach dem Push wieder entfernt —, aber die kurzzeitige Klartext-Existenz im
-Chat reicht, um sie als kompromittiert zu behandeln.
+Chat reicht, um sie als kompromittiert zu behandeln, unabhängig davon, wie oft sie schon
+tatsächlich für einen Push benutzt wurden.
 
-**Für künftige Pushes, damit sich das nicht ein drittes Mal wiederholt:** entweder selbst von der
-eigenen Maschine pushen, oder einen GitHub-Connector (OAuth) statt eines im Chat eingefügten
-Personal-Access-Tokens verwenden. Das `.env`-basierte Token-Handling aus einem deiner anderen
-Projekte bleibt als Alternative offen, falls du weiterhin direkt aus der Sandbox pushen willst.
+**Für künftige Pushes:** Die Empfehlung "selbst lokal pushen oder OAuth-Connector nutzen" aus dem
+letzten Stand hat sich in der Praxis bisher nicht durchgesetzt (siehe oben — derselbe Token kam ein
+zweites Mal zum Einsatz). Falls direktes Pushen aus der Sandbox der bevorzugte Workflow bleibt
+(passt zum sonst genutzten "mach weiter"-Autonomiegrad), ist der naechstbeste realistische Schritt
+vermutlich: künftige Tokens als **fine-grained** statt classic erstellen, gescoped nur auf
+`wp-ai-suite`, mit kurzer Ablaufzeit (7–14 Tage statt "no expiration") — dann erledigt sich die
+Rotation von selbst, auch wenn sie wieder vergessen wird, und ein geleakter Token kann nicht mehr
+das ganze Konto treffen wie der aktuelle.
 
 ## Offene Punkte (deine Entscheidung, Bauplan Abschnitt 17)
 
@@ -180,7 +254,7 @@ Projekte bleibt als Alternative offen, falls du weiterhin direkt aus der Sandbox
 2. Erster interner Testkunde für M11 (Vorschlag: gfr-industriemontagen.de)
 3. Lizenzserver-Wahl für Phase 2 (Freemius vs. EDD Software Licensing vs. Eigenbau)
 
-## Weitere offene Punkte aus M1–M5 (nicht blockierend, aber im Hinterkopf behalten)
+## Weitere offene Punkte aus M1–M6 (nicht blockierend, aber im Hinterkopf behalten)
 
 1. `AnthropicProvider::embed()` wirft `UnsupportedCapabilityException` (Anthropic hat keine
    Embeddings-API) — für M4 (Knowledge Engine) muss ein embeddings-fähiger Provider konfiguriert
@@ -224,9 +298,20 @@ Projekte bleibt als Alternative offen, falls du weiterhin direkt aus der Sandbox
 12. Jede /chat-Anfrage macht IMMER einen Retrieval-Versuch (eigener embed()-API-Call), auch wenn
     die Wissensbasis leer ist — kein Kurzschluss/Caching. Bei komplett leerer Wissensbasis ist das
     ein unnoetiger, aber billiger zusaetzlicher API-Call pro Nachricht.
+13. `SmalotPdfTextExtractor` (M6) unterstuetzt laut smalot/pdfparser-eigener Doku aktuell keine
+    verschluesselten/passwortgeschuetzten PDFs — ein solcher Upload landet als `failed`-Dokument
+    mit der Fehlermeldung aus der Bibliothek, kein Absturz, aber auch keine Entschluesselung.
+14. PDFs ohne Textebene (reine Bild-Scans, kein OCR) werden NICHT als Fehler behandelt, sondern
+    als `processed` mit 0 Chunks (siehe `RawDocument`-Docblock in `PdfSource`) — landen also
+    unauffaellig, aber wirkungslos in der Wissensbasis. Kandidat fuer eine spaetere
+    OCR-Anbindung, nicht Phase 1.
+15. `entries[].ref` (FAQ/custom_text, M6) wird vom Aufrufer frei vergeben, ohne serverseitige
+    Format-/Eindeutigkeitspruefung ueber den upsert-Effekt hinaus (gleicher `ref` = Update statt
+    Duplikat, siehe `FaqEntry`-Docblock) — fuer M10s Admin-UI braucht es vermutlich eine
+    automatische Slug-Generierung aus Frage/Titel, damit ein Admin das nicht von Hand pflegen muss.
 
 ## Wie im neuen Chat weitermachen
 
 `BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder verlinken, dann reicht:
-"Fahre mit M6 (PDF/FAQ-Ingestion) fort" — der neue Chat hat damit den vollen Kontext, ohne
-dass die Grundsatzentscheidungen erneut diskutiert werden müssen.
+"Fahre mit M7 (Tool Engine) fort" — der neue Chat hat damit den vollen Kontext, ohne dass die
+Grundsatzentscheidungen erneut diskutiert werden müssen.
