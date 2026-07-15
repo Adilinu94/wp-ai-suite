@@ -108,6 +108,43 @@ test('isolates a failing document instead of aborting the whole batch', function
     expect($this->documents->failedMessages[$docA->id])->toContain('Embeddings');
 });
 
+test('a RawDocument with extractionError set (M6: e.g. a corrupt PDF) is marked failed without chunking/embedding attempts', function (): void {
+    $source = new FakeKnowledgeSource([
+        new RawDocument('pdf', '7', 'Kaputtes PDF', '', 'PDF-Textextraktion fehlgeschlagen: ungueltige Struktur.'),
+    ]);
+
+    $summary = $this->service->ingest($source);
+
+    expect($summary->processed)->toBe(0)
+        ->and($summary->failed)->toBe(1)
+        ->and($summary->errors)->toHaveCount(1)
+        ->and($summary->errors[0])->toContain('ungueltige Struktur');
+
+    $stored = $this->documents->findBySourceTypeAndRef('pdf', '7');
+    expect($stored)->not->toBeNull()
+        ->and($stored->status)->toBe('failed');
+    expect($this->documents->failedMessages[$stored->id])->toBe('PDF-Textextraktion fehlgeschlagen: ungueltige Struktur.');
+
+    // Kein Chunk/Embedding-Versuch fuer ein Dokument, dessen Inhalt gar nicht erst extrahiert
+    // werden konnte.
+    expect($this->documents->chunksByDocument[$stored->id] ?? [])->toBe([]);
+    expect($this->vectorStore->upsertCalls)->toBe([]);
+});
+
+test('an extractionError on one document does not block the others in the same batch', function (): void {
+    $source = new FakeKnowledgeSource([
+        new RawDocument('pdf', '1', 'Kaputtes PDF', '', 'ungueltige PDF-Struktur.'),
+        new RawDocument('pdf', '2', 'Gutes PDF', 'Regulaerer Inhalt eines lesbaren PDFs.'),
+    ]);
+
+    $summary = $this->service->ingest($source);
+
+    expect($summary->processed)->toBe(1)
+        ->and($summary->failed)->toBe(1);
+
+    expect($this->documents->findBySourceTypeAndRef('pdf', '2')->status)->toBe('processed');
+});
+
 test('a document with only whitespace content is still marked processed, with zero chunks', function (): void {
     $source = new FakeKnowledgeSource([
         new RawDocument('wp_content', '99', 'Leere Seite', '   '),

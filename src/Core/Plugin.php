@@ -17,6 +17,8 @@ use WPAiSuite\Frontend\ChatWidget\Shortcode;
 use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
 use WPAiSuite\Knowledge\Chunking\RecursiveTextChunker;
 use WPAiSuite\Knowledge\DocumentRepositoryInterface;
+use WPAiSuite\Knowledge\Ingestion\PdfTextExtractorInterface;
+use WPAiSuite\Knowledge\Ingestion\SmalotPdfTextExtractor;
 use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
 use WPAiSuite\Knowledge\VectorStore\WpdbJsonVectorStore;
 use WPAiSuite\Knowledge\WpdbDocumentRepository;
@@ -195,6 +197,10 @@ final class Plugin
      * POST /wpais/v1/documents-Anfrage in DocumentsController aufgeloest, nicht hier beim
      * Registrieren, aus demselben Grund: ein fehlender/falscher Provider darf nicht die Route
      * selbst zum Scheitern bringen.
+     *
+     * M6 ("PDF/FAQ-Ingestion") ergaenzt hier nur PdfTextExtractorInterface — PdfSource/FaqSource
+     * selbst brauchen keine eigene Registrierung, DocumentsController baut sie pro Request frisch
+     * (analog dazu, wie ChatController RagService pro Request baut, M5).
      */
     private function registerKnowledgeServices(): void
     {
@@ -214,12 +220,21 @@ final class Plugin
             return new WpdbJsonVectorStore($wpdb);
         });
 
+        // M6: eigener Port statt direkter smalot/pdfparser-Nutzung in DocumentsController, siehe
+        // PdfTextExtractorInterface-Docblock. Registrierung hier ist verzoegerungsfrei moeglich
+        // (keine WP-Config-Konstante noetig wie bei ApiKeyVault) — SmalotPdfTextExtractor selbst
+        // greift erst bei tatsaechlichem extract()-Aufruf auf die Composer-Klasse zu.
+        $this->container->set(PdfTextExtractorInterface::class, static function (): PdfTextExtractorInterface {
+            return new SmalotPdfTextExtractor();
+        });
+
         $this->container->set(DocumentsController::class, static function (Container $c): DocumentsController {
             return new DocumentsController(
                 $c->get(DocumentRepositoryInterface::class),
                 $c->get(ChunkerInterface::class),
                 $c->get(VectorStoreInterface::class),
                 $c->get(ActiveProviderResolver::class),
+                $c->get(PdfTextExtractorInterface::class),
             );
         });
     }

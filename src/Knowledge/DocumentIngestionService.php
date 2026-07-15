@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WPAiSuite\Knowledge;
 
+use RuntimeException;
 use Throwable;
 use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
 use WPAiSuite\Knowledge\Embedding\EmbeddingService;
@@ -64,9 +65,31 @@ final class DocumentIngestionService
         return new IngestionSummary($processed, $skippedUnchanged, $failed, $errors);
     }
 
-    /** @return bool true wenn verarbeitet, false wenn unveraendert uebersprungen. */
+    /**
+     * @return bool true wenn verarbeitet, false wenn unveraendert uebersprungen.
+     * @throws Throwable bei jedem Fehlschlag (auch bei $rawDocument->extractionError, M6) — wird
+     *     von ingest()'s Try/Catch abgefangen, siehe RawDocument::$extractionError-Docblock.
+     */
     private function ingestOne(RawDocument $rawDocument): bool
     {
+        if ($rawDocument->extractionError !== null) {
+            // M6: Quelle (z.B. PdfSource) konnte den Inhalt nicht extrahieren. Trotzdem eine
+            // Dokument-Zeile anlegen (status=failed sichtbar machen, statt das Dokument komplett
+            // zu ignorieren) und dann denselben Fehlerpfad wie unten (markFailed + throw) nutzen,
+            // damit ingest() es identisch zu jedem anderen Fehlschlag zaehlt. Checksum hier ohne
+            // fachliche Bedeutung (kein Inhalt vorhanden), nur um die NOT-NULL-Spalte zu fuellen.
+            $document = $this->documents->upsertDocument(
+                $rawDocument->sourceType,
+                $rawDocument->sourceRef,
+                $rawDocument->title,
+                hash('sha256', 'extraction-error:' . $rawDocument->extractionError),
+            );
+
+            $this->documents->markFailed($document->id, $rawDocument->extractionError);
+
+            throw new RuntimeException($rawDocument->extractionError);
+        }
+
         $checksum = hash('sha256', $rawDocument->content);
         $existing = $this->documents->findBySourceTypeAndRef($rawDocument->sourceType, $rawDocument->sourceRef);
 
