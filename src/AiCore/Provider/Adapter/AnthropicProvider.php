@@ -222,6 +222,30 @@ final class AnthropicProvider implements AiProviderInterface
                 continue;
             }
 
+            if ($message->role === 'assistant' && $message->toolCalls !== []) {
+                // M7: Anthropic verlangt die urspruenglichen tool_use-Bloecke in genau der
+                // assistant-Runde, in der sie angefordert wurden, sonst kann der direkt danach
+                // folgende tool_result-Block (oben) per tool_use_id nicht zugeordnet werden ("each
+                // tool_result block must have a corresponding tool_use block" o.ae. Anthropic-
+                // Fehlermeldung) — siehe ChatMessage::$toolCalls-Docblock. content wird dafuer zum
+                // Block-Array statt eines einfachen Strings (Textanteil nur, falls das Modell neben
+                // dem/den Tool-Aufruf(en) auch sichtbaren Text produziert hat).
+                $blocks = [];
+                if ($message->content !== '') {
+                    $blocks[] = ['type' => 'text', 'text' => $message->content];
+                }
+                foreach ($message->toolCalls as $toolCall) {
+                    $blocks[] = [
+                        'type' => 'tool_use',
+                        'id' => $toolCall->id,
+                        'name' => $toolCall->name,
+                        'input' => $toolCall->arguments,
+                    ];
+                }
+                $messages[] = ['role' => 'assistant', 'content' => $blocks];
+                continue;
+            }
+
             $messages[] = ['role' => $message->role, 'content' => $message->content];
         }
 

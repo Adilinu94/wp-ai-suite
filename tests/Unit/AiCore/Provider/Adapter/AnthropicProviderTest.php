@@ -6,6 +6,7 @@ use WPAiSuite\AiCore\Provider\Adapter\AnthropicProvider;
 use WPAiSuite\AiCore\Provider\Contract\ChatMessage;
 use WPAiSuite\AiCore\Provider\Contract\ChatRequest;
 use WPAiSuite\AiCore\Provider\Contract\ProviderException;
+use WPAiSuite\AiCore\Provider\Contract\ToolCall;
 use WPAiSuite\AiCore\Provider\Contract\ToolDefinition;
 use WPAiSuite\AiCore\Provider\Contract\UnsupportedCapabilityException;
 use WPAiSuite\Tests\Unit\AiCore\Provider\Adapter\FakeHttpTransport;
@@ -87,6 +88,60 @@ test('chat() parses tool_use content blocks into ToolCall objects', function ():
         ->and($response->toolCalls)->toHaveCount(1)
         ->and($response->toolCalls[0]->name)->toBe('get_weather')
         ->and($response->toolCalls[0]->arguments['city'])->toBe('Witten');
+});
+
+test('M7: sends a prior assistant tool_use turn back as content blocks, so a tool_result can reference it', function (): void {
+    $this->transport->queueResponse(200, json_encode([
+        'content' => [['type' => 'text', 'text' => '22 Grad und sonnig.']],
+        'stop_reason' => 'end_turn',
+        'usage' => ['input_tokens' => 3, 'output_tokens' => 3],
+    ], JSON_THROW_ON_ERROR));
+
+    $this->provider->chat(new ChatRequest(
+        messages: [
+            new ChatMessage('user', 'Wetter?'),
+            new ChatMessage(
+                role: 'assistant',
+                content: 'Ich schaue nach.',
+                toolCalls: [new ToolCall('toolu_1', 'get_weather', ['city' => 'Witten'])],
+            ),
+            new ChatMessage(role: 'tool', content: '{"temp":"22C"}', toolCallId: 'toolu_1'),
+        ],
+        model: 'claude-test',
+    ));
+
+    $sentBody = json_decode((string) $this->transport->requests[0]['body'], true);
+    $assistantMessage = $sentBody['messages'][1];
+
+    expect($assistantMessage['role'])->toBe('assistant')
+        ->and($assistantMessage['content'])->toBeArray()
+        ->and($assistantMessage['content'][0]['type'])->toBe('text')
+        ->and($assistantMessage['content'][0]['text'])->toBe('Ich schaue nach.')
+        ->and($assistantMessage['content'][1]['type'])->toBe('tool_use')
+        ->and($assistantMessage['content'][1]['id'])->toBe('toolu_1')
+        ->and($assistantMessage['content'][1]['input'])->toBe(['city' => 'Witten'])
+        ->and($sentBody['messages'][2]['content'][0]['tool_use_id'])->toBe('toolu_1');
+});
+
+test('M7: an assistant tool_calls turn with no visible text becomes a content array with only the tool_use block', function (): void {
+    $this->transport->queueResponse(200, json_encode([
+        'content' => [['type' => 'text', 'text' => 'ok']],
+        'stop_reason' => 'end_turn',
+        'usage' => ['input_tokens' => 1, 'output_tokens' => 1],
+    ], JSON_THROW_ON_ERROR));
+
+    $this->provider->chat(new ChatRequest(
+        messages: [
+            new ChatMessage(role: 'assistant', content: '', toolCalls: [new ToolCall('toolu_2', 'get_weather', [])]),
+            new ChatMessage(role: 'tool', content: '{}', toolCallId: 'toolu_2'),
+        ],
+        model: 'claude-test',
+    ));
+
+    $sentBody = json_decode((string) $this->transport->requests[0]['body'], true);
+
+    expect($sentBody['messages'][0]['content'])->toHaveCount(1)
+        ->and($sentBody['messages'][0]['content'][0]['type'])->toBe('tool_use');
 });
 
 test('chat() throws a ProviderException on an HTTP error', function (): void {

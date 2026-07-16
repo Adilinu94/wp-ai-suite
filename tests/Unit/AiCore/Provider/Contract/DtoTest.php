@@ -21,7 +21,16 @@ test('ChatMessage carries tool-result fields', function (): void {
     $message = new ChatMessage(role: 'tool', content: '{"ok":true}', toolCallId: 'call_1', name: 'get_weather');
 
     expect($message->toolCallId)->toBe('call_1')
-        ->and($message->name)->toBe('get_weather');
+        ->and($message->name)->toBe('get_weather')
+        ->and($message->toolCalls)->toBe([]);
+});
+
+test('M7: ChatMessage carries the tool calls an assistant turn itself made', function (): void {
+    $toolCall = new ToolCall('call_1', 'get_weather', ['city' => 'Witten']);
+    $message = new ChatMessage(role: 'assistant', content: '', toolCalls: [$toolCall]);
+
+    expect($message->toolCalls)->toHaveCount(1)
+        ->and($message->toolCalls[0]->name)->toBe('get_weather');
 });
 
 test('ChatRequest has sensible defaults', function (): void {

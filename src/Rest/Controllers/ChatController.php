@@ -16,6 +16,9 @@ use WPAiSuite\Knowledge\Embedding\EmbeddingService;
 use WPAiSuite\Knowledge\RagService;
 use WPAiSuite\Knowledge\RetrievedSource;
 use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
+use WPAiSuite\Tools\Builtin\KnowledgeSearchTool;
+use WPAiSuite\Tools\Builtin\WooCommerceProductSearchTool;
+use WPAiSuite\Tools\ToolRegistry;
 
 /**
  * POST /wpais/v1/chat — Bauplan Abschnitt 12. M2-DoD: "funktioniert ohne Frontend (curl/Postman),
@@ -43,6 +46,11 @@ use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
  * Echtes SSE innerhalb der WP-REST-API bedeutet: Header/Body manuell senden und danach exit(),
  * statt die Rueckgabe durch WP_REST_Server serialisieren zu lassen (die WP-HTTP-API selbst puffert
  * die komplette Antwort und eignet sich nicht fuer progressives Senden).
+ *
+ * M7 (Tool Engine): der eigentliche Tool-Aufruf-Loop steckt vollstaendig in
+ * ConversationService::handleUserMessage() — dieser Controller baut nur die ToolRegistry (analog
+ * zu RagService: pro Request, siehe unten) und reicht sie durch, weiss selbst nichts von
+ * Tool-Aufrufen.
  */
 final class ChatController
 {
@@ -97,7 +105,19 @@ final class ChatController
         }
 
         $ragService = new RagService($this->vectorStore, new EmbeddingService($provider), $this->documents);
-        $conversationService = new ConversationService($this->conversations, $this->promptBuilder, $provider, $model, $ragService);
+
+        // M7: KnowledgeSearchTool braucht denselben $ragService wie das automatische M5-
+        // Retrieval oben (bzw. wird gleich unten aufgerufen) — deshalb hier, nicht im
+        // Container, gebaut (siehe ToolRegistry-Docblock). WooCommerceProductSearchTool nur
+        // anbieten, wenn WooCommerce ueberhaupt aktiv ist — ein Tool anzubieten, das garantiert
+        // fehlschlaegt, ist schlechteres Modellverhalten als es gar nicht erst zu erwaehnen.
+        $tools = [new KnowledgeSearchTool($ragService)];
+        if (function_exists('wc_get_products')) {
+            $tools[] = new WooCommerceProductSearchTool();
+        }
+        $toolRegistry = new ToolRegistry($tools);
+
+        $conversationService = new ConversationService($this->conversations, $this->promptBuilder, $provider, $model, $ragService, $toolRegistry);
 
         $sessionTokenParam = $request->get_param('session_token');
         $sessionToken = is_string($sessionTokenParam) && $sessionTokenParam !== '' ? $sessionTokenParam : null;

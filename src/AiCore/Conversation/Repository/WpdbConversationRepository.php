@@ -99,7 +99,7 @@ final class WpdbConversationRepository implements ConversationRepositoryInterfac
         );
 
         return array_map(static function (array $row): StoredMessage {
-            $toolCalls = $row['tool_calls'] !== null ? json_decode((string) $row['tool_calls'], true) : [];
+            $decoded = $row['tool_calls'] !== null ? json_decode((string) $row['tool_calls'], true) : null;
 
             return new StoredMessage(
                 role: $row['role'],
@@ -108,7 +108,8 @@ final class WpdbConversationRepository implements ConversationRepositoryInterfac
                 model: $row['model'],
                 tokensInput: $row['tokens_input'] !== null ? (int) $row['tokens_input'] : null,
                 tokensOutput: $row['tokens_output'] !== null ? (int) $row['tokens_output'] : null,
-                toolCalls: is_array($toolCalls) ? $toolCalls : [],
+                toolCalls: $row['role'] !== 'tool' && is_array($decoded) ? $decoded : [],
+                toolCallId: $row['role'] === 'tool' && is_array($decoded) ? (($decoded['tool_call_id'] ?? null) !== null ? (string) $decoded['tool_call_id'] : null) : null,
             );
         }, $rows ?: []);
     }
@@ -117,13 +118,20 @@ final class WpdbConversationRepository implements ConversationRepositoryInterfac
     {
         $table = $this->messagesTable();
 
+        $toolCallsColumn = null;
+        if ($message->role === 'tool' && $message->toolCallId !== null) {
+            $toolCallsColumn = json_encode(['tool_call_id' => $message->toolCallId], JSON_THROW_ON_ERROR);
+        } elseif ($message->toolCalls !== []) {
+            $toolCallsColumn = json_encode($message->toolCalls, JSON_THROW_ON_ERROR);
+        }
+
         $this->wpdb->insert(
             $table,
             [
                 'conversation_id' => $conversationId,
                 'role' => $message->role,
                 'content' => $message->content,
-                'tool_calls' => $message->toolCalls !== [] ? json_encode($message->toolCalls, JSON_THROW_ON_ERROR) : null,
+                'tool_calls' => $toolCallsColumn,
                 'provider' => $message->provider,
                 'model' => $message->model,
                 'tokens_input' => $message->tokensInput,

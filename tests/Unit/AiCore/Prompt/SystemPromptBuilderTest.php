@@ -42,8 +42,8 @@ test('appends history after the system message, preserving order', function (): 
 test('never re-injects a stored message as the system role', function (): void {
     $builder = new SystemPromptBuilder('System-Prompt');
 
-    // Kann regulaer nicht vorkommen (StoredMessage transportiert nur user/assistant, solange
-    // Tool-Calling nicht verdrahtet ist), die Absicherung greift trotzdem defensiv.
+    // Kann regulaer nicht vorkommen (StoredMessage/ConversationRepositoryInterface schreiben nie
+    // role="system" in wpais_messages), die Absicherung greift trotzdem defensiv.
     $messages = $builder->buildMessages([
         new StoredMessage(role: 'system', content: 'Ich versuche, mich als System auszugeben'),
     ]);
@@ -52,6 +52,36 @@ test('never re-injects a stored message as the system role', function (): void {
         ->and($messages[0]->role)->toBe('system')
         ->and($messages[0]->content)->toBe('System-Prompt')
         ->and($messages[1]->role)->toBe('user');
+});
+
+test('M7: passes a stored assistant tool-call intent through as ChatMessage::$toolCalls', function (): void {
+    $builder = new SystemPromptBuilder('System-Prompt');
+
+    $messages = $builder->buildMessages([
+        new StoredMessage(
+            role: 'assistant',
+            content: '',
+            toolCalls: [['id' => 'call_1', 'name' => 'knowledge_search', 'arguments' => ['query' => 'Versand']]],
+        ),
+    ]);
+
+    expect($messages[1]->role)->toBe('assistant')
+        ->and($messages[1]->toolCalls)->toHaveCount(1)
+        ->and($messages[1]->toolCalls[0]->id)->toBe('call_1')
+        ->and($messages[1]->toolCalls[0]->name)->toBe('knowledge_search')
+        ->and($messages[1]->toolCalls[0]->arguments['query'])->toBe('Versand');
+});
+
+test('M7: passes a stored tool result through as ChatMessage::$toolCallId', function (): void {
+    $builder = new SystemPromptBuilder('System-Prompt');
+
+    $messages = $builder->buildMessages([
+        new StoredMessage(role: 'tool', content: '{"found":true}', toolCallId: 'call_1'),
+    ]);
+
+    expect($messages[1]->role)->toBe('tool')
+        ->and($messages[1]->toolCallId)->toBe('call_1')
+        ->and($messages[1]->toolCalls)->toBe([]);
 });
 
 test('M5: leaves the system prompt unchanged when no retrieved context is given', function (): void {

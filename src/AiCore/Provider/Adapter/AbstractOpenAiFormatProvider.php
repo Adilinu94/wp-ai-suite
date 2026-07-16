@@ -227,6 +227,24 @@ abstract class AbstractOpenAiFormatProvider implements AiProviderInterface
             $msg['tool_call_id'] = $message->toolCallId;
         }
 
+        if ($message->toolCalls !== []) {
+            // M7: die assistant-Nachricht, die urspruenglich zum Tool-Aufruf gefuehrt hat, muss
+            // ihre eigenen tool_calls wieder mitschicken, sonst kann OpenAI das nachfolgende
+            // role="tool"-Ergebnis nicht zuordnen ("tool_call_id did not have a matching
+            // tool_calls" o.ae.) — siehe ChatMessage::$toolCalls-Docblock.
+            $msg['tool_calls'] = array_map(
+                static fn (ToolCall $tc): array => [
+                    'id' => $tc->id,
+                    'type' => 'function',
+                    'function' => [
+                        'name' => $tc->name,
+                        'arguments' => (string) json_encode($tc->arguments, JSON_THROW_ON_ERROR),
+                    ],
+                ],
+                $message->toolCalls,
+            );
+        }
+
         return $msg;
     }
 

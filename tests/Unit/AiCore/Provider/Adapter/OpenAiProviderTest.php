@@ -6,6 +6,7 @@ use WPAiSuite\AiCore\Provider\Adapter\OpenAiProvider;
 use WPAiSuite\AiCore\Provider\Contract\ChatMessage;
 use WPAiSuite\AiCore\Provider\Contract\ChatRequest;
 use WPAiSuite\AiCore\Provider\Contract\ProviderException;
+use WPAiSuite\AiCore\Provider\Contract\ToolCall;
 use WPAiSuite\AiCore\Provider\Contract\ToolDefinition;
 use WPAiSuite\Tests\Unit\AiCore\Provider\Adapter\FakeHttpTransport;
 
@@ -85,6 +86,35 @@ test('chat() parses tool_calls from the response', function (): void {
         ->and($response->toolCalls)->toHaveCount(1)
         ->and($response->toolCalls[0]->name)->toBe('get_weather')
         ->and($response->toolCalls[0]->arguments['city'])->toBe('Witten');
+});
+
+test('M7: sends a prior assistant tool_calls turn back in OpenAI format, so a tool result can be attributed', function (): void {
+    $this->transport->queueResponse(200, json_encode([
+        'choices' => [['message' => ['content' => 'Laut den Daten: sonnig.'], 'finish_reason' => 'stop']],
+        'usage' => ['prompt_tokens' => 3, 'completion_tokens' => 3],
+    ], JSON_THROW_ON_ERROR));
+
+    $this->provider->chat(new ChatRequest(
+        messages: [
+            new ChatMessage('user', 'Wetter?'),
+            new ChatMessage(
+                role: 'assistant',
+                content: '',
+                toolCalls: [new ToolCall('call_abc', 'get_weather', ['city' => 'Witten'])],
+            ),
+            new ChatMessage(role: 'tool', content: '{"temp":"22C"}', toolCallId: 'call_abc'),
+        ],
+        model: 'gpt-test',
+    ));
+
+    $sentBody = json_decode((string) $this->transport->requests[0]['body'], true);
+
+    expect($sentBody['messages'][1]['role'])->toBe('assistant')
+        ->and($sentBody['messages'][1]['tool_calls'][0]['id'])->toBe('call_abc')
+        ->and($sentBody['messages'][1]['tool_calls'][0]['function']['name'])->toBe('get_weather')
+        ->and(json_decode($sentBody['messages'][1]['tool_calls'][0]['function']['arguments'], true))->toBe(['city' => 'Witten'])
+        ->and($sentBody['messages'][2]['role'])->toBe('tool')
+        ->and($sentBody['messages'][2]['tool_call_id'])->toBe('call_abc');
 });
 
 test('chat() throws a ProviderException on an HTTP error', function (): void {

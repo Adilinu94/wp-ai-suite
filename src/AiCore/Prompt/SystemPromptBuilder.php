@@ -6,6 +6,7 @@ namespace WPAiSuite\AiCore\Prompt;
 
 use WPAiSuite\AiCore\Conversation\StoredMessage;
 use WPAiSuite\AiCore\Provider\Contract\ChatMessage;
+use WPAiSuite\AiCore\Provider\Contract\ToolCall;
 
 /**
  * Baut die Nachrichtenliste fuer ChatRequest aus System-Prompt + Konversationshistorie.
@@ -47,11 +48,22 @@ final class SystemPromptBuilder
 
         foreach ($history as $stored) {
             // Defensive Rollentrennung: koennte regulaer nicht vorkommen (StoredMessage
-            // repraesentiert nur user/assistant, solange Tool-Calling noch nicht verdrahtet ist -
-            // das ist M7), schuetzt aber davor, dass gespeicherte Inhalte je als System-Rolle
-            // re-injiziert werden.
+            // repraesentiert nur user/assistant/tool), schuetzt aber davor, dass gespeicherte
+            // Inhalte je als System-Rolle re-injiziert werden.
             $role = $stored->role === 'system' ? 'user' : $stored->role;
-            $messages[] = new ChatMessage(role: $role, content: $stored->content);
+            $messages[] = new ChatMessage(
+                role: $role,
+                content: $stored->content,
+                toolCallId: $stored->toolCallId,
+                toolCalls: array_map(
+                    static fn (array $tc): ToolCall => new ToolCall(
+                        (string) ($tc['id'] ?? ''),
+                        (string) ($tc['name'] ?? ''),
+                        (array) ($tc['arguments'] ?? []),
+                    ),
+                    $stored->toolCalls,
+                ),
+            );
         }
 
         return $messages;
