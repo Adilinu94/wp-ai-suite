@@ -6,7 +6,7 @@
 ## Projekt
 
 Enterprise-KI-Plattform als WordPress-Plugin (Platzhaltername "WP AI Suite" / Namespace `WPAiSuite`).
-Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M7
+Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M8
 weitergearbeitet wird.
 
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
@@ -21,8 +21,8 @@ weitergearbeitet wird.
 
 ## Stand
 
-**M0, M1, M2, M3, M4, M5, M6 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`,
-`2770198`, `f4f715c`, `19dae1e`, `46cc847`, `902e7ee`, `5d62325`, siehe `git log`).
+**M0, M1, M2, M3, M4, M5, M6, M7 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`,
+`2770198`, `f4f715c`, `19dae1e`, `46cc847`, `902e7ee`, `5d62325`, `be8b38f`, siehe `git log`).
 
 - **M0** — Plugin-Bootstrap, DB-Migrationen (6 Tabellen), Ordnerstruktur, DSGVO-Uninstall.
 - **M1** — `AiProviderInterface` + DTOs, `OpenAiProvider`/`AnthropicProvider`/`OpenAiCompatibleProvider`
@@ -81,20 +81,63 @@ weitergearbeitet wird.
   `pdf`/`faq`/`custom_text` erweitert (siehe "Manuell testen" unten fuer die Request-Form). PDF-
   "Upload" laeuft bewusst ueber eine schon vorhandene WP-Mediathek-Anhang-ID, kein eigenes
   multipart-Handling in diesem Endpunkt (Begruendung: Docblock `DocumentsController`).
+- **M7** — `Tools/Contract/{ToolInterface,ToolResult,ToolExecutionContext}` + `ToolRegistry` exakt
+  nach Bauplan Abschnitt 5/8. `KnowledgeSearchTool` (WP-frei, haengt nur an
+  `RagServiceInterface`) und `WooCommerceProductSearchTool` (read-only `wc_get_products()`-
+  Wrapper, nur registriert wenn WooCommerce aktiv ist) als erste zwei Tools.
+  **Wichtigster Teil war NICHT das Offensichtliche:** der Provider Layer (M1) hatte
+  Function-Calling fuers Senden/Empfangen einzelner Tool-Calls schon vollstaendig gebaut — was
+  fehlte, war das Round-Tripping einer assistant-Tool-Aufruf-Runde zurueck an den Provider (ohne
+  das kann ein zweiter Request mit dem Tool-Ergebnis bei keinem der beiden Provider funktionieren,
+  siehe Commit-Message fuer die technische Begruendung). Dafuer `ChatMessage` um optionales
+  `$toolCalls` erweitert (gleiches additives Muster wie `RawDocument::$extractionError` in M6) und
+  beide Provider-Adapter angepasst. `StoredMessage`/`wpais_messages` hatten die `tool_calls`-Spalte
+  bereits seit M0/M2 fuer genau diesen Zweck vorgesehen (keine Migration noetig) —
+  `StoredMessage` bekam zusaetzlich `$toolCallId` (teilt sich die Spalte mit `$toolCalls`,
+  Konvention ueber `$role`, siehe dortiger Docblock).
+  `ConversationService::handleUserMessage()` hat jetzt einen Tool-Loop mit
+  `MAX_TOOL_ITERATIONS = 5`, danach eine erzwungene finale Runde OHNE Tools (Modell MUSS mit Text
+  antworten — der Loop endet garantiert IMMER mit einer finalen `assistant`-Nachricht, auch im
+  pathologischen Fall). Jede Tool-Runde wird vollstaendig persistiert (Tool-Aufruf-Absicht +
+  jedes Tool-Ergebnis als eigene Zeile) und einzeln in `wpais_usage_logs` erfasst;
+  `ChatCompletionResult` summiert die Tokens ueber alle Runden. `ChatController` baut die
+  `ToolRegistry` pro Request (`KnowledgeSearchTool` braucht den Request-eigenen `RagService`,
+  analog zu M5) und reicht sie durch, kennt selbst keine Tool-Details.
 
-**Nächster Schritt: M7 — Tool Engine**
-- `Tools/Contract/{ToolInterface,ToolResult,ToolExecutionContext}` + `ToolRegistry` implementieren
-  (Bauplan Abschnitt 8) — `src/Tools/` ist bisher nur der leere M0-Namespace-Stub
-- `KnowledgeSearchTool` (ruft `RagServiceInterface::retrieve()`) und
-  `WooCommerceProductSearchTool` (`wc_get_products()`-Wrapper, read-only) als erste zwei Tools
-- Provider-Seite ist bereits vorbereitet (M1): `ChatRequest::$tools`, `ToolDefinition`, `ToolCall`,
-  `AiProviderInterface::supportsTools()` existieren schon — pruefen, ob/wie `ConversationService`
-  (M2) Tools an den Provider durchreichen und `ToolCall`-Antworten in einer Schleife (Tool
-  ausfuehren, Ergebnis als `tool`-Rolle zurueck an den Provider) verarbeiten muss; das ist in M2
-  noch nicht gebaut worden (kein Function-Calling-Loop bisher)
-- Definition of Done: Bauplan Abschnitt 15, Zeile M7
+**Nächster Schritt: M8 — Elementor-Widget**
+- `Elementor\ChatWidget extends \Elementor\Widget_Base` (Bauplan Abschnitt 10, vollstaendiger
+  Code-Schnipsel dort) — klassisches Widget, bewusst KEIN natives V4-Atomic-Element (Begruendung
+  dort: laeuft identisch auf V3- und V4-Seiten)
+- 4 Anzeigemodi ueber ein `display_mode`-Control: `inline`, `floating` (Bubble), `popup`
+  (Button-getriggert), `sidebar` — `render()` gibt nur ein `<div data-mode="...">` aus, das
+  bestehende `wpais-chat.js`-Bundle (M3) muss das `data-mode`-Attribut lesen und je nach Modus
+  unterschiedlich rendern/positionieren; bisher rendert es nur inline (kein Modus-Handling)
+- Style-Controls (Bauplan-Schnipsel zeigt `primary_color` vollstaendig, nennt `bubble_color`,
+  `text_color`, `border_radius`, `spacing`, `icon` als "weitere Controls nach demselben Muster")
+- Live-Vorschau im Elementor-Editor MUSS mit leeren/Platzhalter-Einstellungen fehlerfrei rendern
+  (Bauplan-Bedingung) — Elementor selbst rendert `render()` automatisch im Editor-Kontext
+- Definition of Done: Bauplan Abschnitt 15, Zeile M8
 
 ## Manuell testen
+
+**M7 (Tool Engine):** Kein neuer Endpunkt — testet sich ueber den bestehenden `/chat`-Endpunkt
+(M2-Anleitung unten). Voraussetzung: Wissensbasis hat mind. einen Eintrag (M4/M6), Provider
+unterstuetzt Tools (OpenAI/Anthropic: ja, siehe `supportsTools()`).
+```bash
+curl -N -X POST "https://solar.local/wp-json/wpais/v1/chat" \
+  -H "X-WP-Nonce: <NONCE>" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Was steht in eurer Wissensbasis ueber Versandkosten?"}'
+```
+Erwartung im SSE-Stream: keine sichtbare Aenderung im Ablauf noetig (Tool-Aufrufe passieren
+serverseitig zwischen den `token`-Events), aber die Antwort sollte inhaltlich zur Wissensbasis
+passen. Zum Nachvollziehen, ob wirklich ein Tool lief: `wpais_messages` fuer die Konversation
+pruefen (z.B. per DB-Client oder ein kuenftiger M10-Log-View) — es sollte eine `assistant`-Zeile
+mit gefuelltem `tool_calls` UND eine `tool`-Zeile mit demselben `id` dazwischen liegen, bevor die
+finale `assistant`-Zeile kommt. Bei aktivem WooCommerce zusaetzlich eine Produktfrage testen
+("Was kostet Produkt X?") — sollte `woocommerce_product_search` statt `knowledge_search`
+ausloesen. **Bisher nur ueber die Pest-Tests verifiziert, kein echter End-to-End-Test mit einem
+echten Provider** — das waere der naechste sinnvolle manuelle Test vor M8.
 
 **M6 (PDF/FAQ-Ingestion):** Alle drei Aufrufe brauchen `manage_options` (eingeloggter Admin,
 Nonce wie in Schritt 1 der M2-Anleitung unten).
@@ -200,14 +243,16 @@ Standard-Modell hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klare
   `vendor/bin/pest` sind hier nicht ausführbar — betrifft ab M6 zusaetzlich `smalot/pdfparser`
   (composer.json-Eintrag ist ungetestet gegen die echte Bibliothek; `SmalotPdfTextExtractor` ist
   deshalb bewusst NICHT Teil der Unit-Test-Suite, siehe dortiger Docblock).
-- Alle M1–M6-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
+- Alle M1–M7-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
   Wegwerf-Shim laufen lassen (kein Teil des Repos), der `test()`/`expect()`/`beforeEach()` minimal
-  nachbildet und die echten Testdateien unveraendert einliest — 110/110 gruen (99 aus M1-M5 +
-  11 neue aus M6). **Bitte trotzdem einmal lokal `composer install && vendor/bin/pest` laufen
+  nachbildet und die echten Testdateien unveraendert einliest — 135/135 gruen (110 aus M1-M6 +
+  25 neue aus M7). **Bitte trotzdem einmal lokal `composer install && vendor/bin/pest` laufen
   lassen**, um mit dem echten Test-Runner gegenzuchecken — das ist der einzige Weg, wie
   `SmalotPdfTextExtractor` gegen die echte `smalot/pdfparser`-Klasse ueberhaupt geprüft wird; ein
   kurzer manueller Test mit einer echten PDF-Datei (siehe "Manuell testen" oben) waere zusaetzlich
-  sinnvoll, bevor M6 als wirklich fertig gilt.
+  sinnvoll, bevor M6 als wirklich fertig gilt. Fuer M7 zusaetzlich sinnvoll: der M7-Abschnitt unter
+  "Manuell testen" oben (echter Provider, echter Tool-Aufruf) — das Tool-Loop-Verhalten selbst ist
+  gut durch Unit-Tests abgesichert, aber noch nie gegen eine echte OpenAI/Anthropic-Antwort gelaufen.
 - Integration-Tests (`tests/Integration/`, `WP_UnitTestCase`) brauchen zusätzlich eine
   WordPress-Test-Suite + Test-DB — siehe `tests/Integration/README.md` für den offenen
   Setup-Schritt. Testfälle für `WpdbApiKeyRepository` (M1), `WpdbConversationRepository` (M2)
@@ -254,7 +299,7 @@ das ganze Konto treffen wie der aktuelle.
 2. Erster interner Testkunde für M11 (Vorschlag: gfr-industriemontagen.de)
 3. Lizenzserver-Wahl für Phase 2 (Freemius vs. EDD Software Licensing vs. Eigenbau)
 
-## Weitere offene Punkte aus M1–M6 (nicht blockierend, aber im Hinterkopf behalten)
+## Weitere offene Punkte aus M1–M7 (nicht blockierend, aber im Hinterkopf behalten)
 
 1. `AnthropicProvider::embed()` wirft `UnsupportedCapabilityException` (Anthropic hat keine
    Embeddings-API) — für M4 (Knowledge Engine) muss ein embeddings-fähiger Provider konfiguriert
@@ -309,9 +354,26 @@ das ganze Konto treffen wie der aktuelle.
     Format-/Eindeutigkeitspruefung ueber den upsert-Effekt hinaus (gleicher `ref` = Update statt
     Duplikat, siehe `FaqEntry`-Docblock) — fuer M10s Admin-UI braucht es vermutlich eine
     automatische Slug-Generierung aus Frage/Titel, damit ein Admin das nicht von Hand pflegen muss.
+16. `knowledge_search` (M7) und das automatische M5-Retrieval koennen sich inhaltlich
+    ueberschneiden: ruft das Modell das Tool mit einer Query auf, die der urspruenglichen
+    User-Nachricht sehr aehnlich ist, gibt es zwei embed()-API-Calls fuer im Wesentlichen
+    dieselbe Suche. Kein Bug, nur ein zusaetzlicher (billiger) API-Call — ein Kandidat fuer
+    spaeteres Caching, falls das bei haeufiger Tool-Nutzung relevant wird.
+17. Quellen (`sources`), die NUR ueber einen `knowledge_search`-Tool-Aufruf gefunden werden (nicht
+    ueber das automatische M5-Retrieval), erscheinen NICHT im `sources`-SSE-Event — das wird
+    weiterhin einmalig direkt nach dem automatischen Retrieval gesendet, bevor der Tool-Loop
+    ueberhaupt beginnt. Die Chat-Antwort selbst nutzt das Tool-Ergebnis trotzdem korrekt, nur die
+    Quellenanzeige im Frontend "sieht" ausschliesslich das automatische Retrieval. Waere ein
+    Kandidat fuer M8/M9 (eigenes SSE-Event pro Tool-Aufruf), aber ausserhalb des M7-DoD.
+18. `WooCommerceProductSearchTool` ist WP/WooCommerce-gekoppelt (wie `WordPressContentSource` in
+    M4) und deshalb hier nicht unit-, sondern nur integrationstestbar — in dieser Sandbox generell
+    nicht ausfuehrbar (keine WP-Testumgebung, siehe oben).
+19. `ConversationService::MAX_TOOL_ITERATIONS` (aktuell 5) ist eine Code-Konstante, kein
+    Admin-Setting — fuer Phase 1 laut Bauplan in Ordnung, waere aber ein sinnvoller Kandidat fuer
+    das M11-Admin-Dashboard, falls sich 5 in der Praxis als zu niedrig/hoch herausstellt.
 
 ## Wie im neuen Chat weitermachen
 
 `BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder verlinken, dann reicht:
-"Fahre mit M7 (Tool Engine) fort" — der neue Chat hat damit den vollen Kontext, ohne dass die
+"Fahre mit M8 (Elementor-Widget) fort" — der neue Chat hat damit den vollen Kontext, ohne dass die
 Grundsatzentscheidungen erneut diskutiert werden müssen.
