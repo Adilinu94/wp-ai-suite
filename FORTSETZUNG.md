@@ -6,7 +6,7 @@
 ## Projekt
 
 Enterprise-KI-Plattform als WordPress-Plugin (Platzhaltername "WP AI Suite" / Namespace `WPAiSuite`).
-Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M8
+Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M9
 weitergearbeitet wird.
 
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
@@ -21,8 +21,9 @@ weitergearbeitet wird.
 
 ## Stand
 
-**M0, M1, M2, M3, M4, M5, M6, M7 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`,
-`2770198`, `f4f715c`, `19dae1e`, `46cc847`, `902e7ee`, `5d62325`, `be8b38f`, siehe `git log`).
+**M0, M1, M2, M3, M4, M5, M6, M7, M8 abgeschlossen und auf `main` gepusht** (Commits: `77181ed`,
+`2770198`, `f4f715c`, `19dae1e`, `46cc847`, `902e7ee`, `5d62325`, `be8b38f`, `862d9a4`, siehe
+`git log`).
 
 - **M0** — Plugin-Bootstrap, DB-Migrationen (6 Tabellen), Ordnerstruktur, DSGVO-Uninstall.
 - **M1** — `AiProviderInterface` + DTOs, `OpenAiProvider`/`AnthropicProvider`/`OpenAiCompatibleProvider`
@@ -103,22 +104,61 @@ weitergearbeitet wird.
   `ChatCompletionResult` summiert die Tokens ueber alle Runden. `ChatController` baut die
   `ToolRegistry` pro Request (`KnowledgeSearchTool` braucht den Request-eigenen `RagService`,
   analog zu M5) und reicht sie durch, kennt selbst keine Tool-Details.
+- **M8** — `Elementor\ChatWidget extends \Elementor\Widget_Base` exakt nach Bauplan Abschnitt 10
+  (`display_mode`, `welcome_message`, `primary_color` 1:1 aus dem Code-Schnipsel), plus die dort
+  nur benannten "weiteren Controls nach demselben Muster": `bubble_color`, `text_color`,
+  `border_radius` (SLIDER), `spacing` (DIMENSIONS), `icon` (ICONS, nur sichtbar bei
+  floating/popup). Farb-/Radius-/Spacing-Controls binden Elementors eigene `selectors`-Config
+  direkt an CSS-Custom-Properties (`--wpais-primary` etc.) — kein PHP-seitig gebautes `<style>`,
+  Elementor generiert das WRAPPER-gescopte CSS selbst. `render()` delegiert an dieselbe
+  `ChatWidgetRenderer`/`AssetManager`-Instanz wie `Shortcode` (M3) statt eigenes `printf()`, damit
+  beide Einbettungswege nie auseinanderlaufen; einzige neue Ausnahme vom Konstruktor-Injection-
+  Muster ist ein minimaler `Plugin::container()`-Zugriffspunkt, noetig weil Elementor
+  Widget-Instanzen intern selbst konstruiert (kein eigener Pflicht-Parameter-Konstruktor moeglich,
+  siehe `ChatWidget`-Docblock).
+  Alle 4 Anzeigemodi haben jetzt echtes CSS/JS-Verhalten (vorher nur "wird akzeptiert"): floating
+  = Launcher-Bubble unten rechts, Panel klappt darueber auf; popup = Launcher-Button im normalen
+  Seitenfluss, Panel oeffnet zentriert mit Backdrop; sidebar = volle Viewport-Hoehe rechts
+  angedockt, immer sichtbar (kein Toggle); inline unveraendert seit M3. floating/popup teilen
+  sich die Toggle-Logik in `wpais-chat.js` (Klick, Escape, Klick ausserhalb schliesst).
+  Nebenbei erledigt: `tests-js/` endlich angelegt (`node:test`, keine npm-Dependency) — loest ein
+  seit M3 im Code-Kommentar stehendes, nie umgesetztes Versprechen ein (14 Tests fuer die bisher
+  ungetesteten reinen Funktionen in `wpais-chat.js`). `ChatWidgetRendererTest.php`: erste
+  PHP-Tests fuer diese seit M3 ungetestete Klasse.
 
-**Nächster Schritt: M8 — Elementor-Widget**
-- `Elementor\ChatWidget extends \Elementor\Widget_Base` (Bauplan Abschnitt 10, vollstaendiger
-  Code-Schnipsel dort) — klassisches Widget, bewusst KEIN natives V4-Atomic-Element (Begruendung
-  dort: laeuft identisch auf V3- und V4-Seiten)
-- 4 Anzeigemodi ueber ein `display_mode`-Control: `inline`, `floating` (Bubble), `popup`
-  (Button-getriggert), `sidebar` — `render()` gibt nur ein `<div data-mode="...">` aus, das
-  bestehende `wpais-chat.js`-Bundle (M3) muss das `data-mode`-Attribut lesen und je nach Modus
-  unterschiedlich rendern/positionieren; bisher rendert es nur inline (kein Modus-Handling)
-- Style-Controls (Bauplan-Schnipsel zeigt `primary_color` vollstaendig, nennt `bubble_color`,
-  `text_color`, `border_radius`, `spacing`, `icon` als "weitere Controls nach demselben Muster")
-- Live-Vorschau im Elementor-Editor MUSS mit leeren/Platzhalter-Einstellungen fehlerfrei rendern
-  (Bauplan-Bedingung) — Elementor selbst rendert `render()` automatisch im Editor-Kontext
-- Definition of Done: Bauplan Abschnitt 15, Zeile M8
+**Nächster Schritt: M9 — Security-Härtung**
+- **Rate-Limiting:** Transient-basiert pro Session-Token/IP (Bauplan-Vorschlag: 20
+  Nachrichten/10 Minuten), noch nirgends im Code vorhanden — greift vermutlich am saubersten in
+  `ChatController::handle()`, vor dem ersten `ConversationService`-Aufruf
+- **`PromptGuard`:** einfache Heuristik gegen bekannte Jailbreak-Phrasen als zusaetzliche
+  Filterschicht — die eigentliche Rollentrennung (User-Input landet nie in der `system`-Rolle,
+  Tool-Ergebnisse immer als `tool`-Rolle) ist durch `SystemPromptBuilder`/M7 bereits strukturell
+  gegeben, `PromptGuard` waere eine zusaetzliche, nicht die einzige Absicherung
+- **DSGVO:** konfigurierbare Aufbewahrungsfrist fuer `wpais_messages` (Cron-Loeschung),
+  manuelle "Konversation loeschen"-Aktion, `uninstall.php` (noch nicht geprueft, ob M0 das schon
+  angelegt hat), Datenschutz-Hinweistext-Baustein als Admin-Notice — IP-Adressen werden bereits
+  seit M2 nicht gespeichert (nur Session-Token), das ist schon erledigt
+- Verschluesselung (`ApiKeyVault`, M1) auditieren — voraussichtlich eher Review als neuer Code
+- Definition of Done: Bauplan Abschnitt 15, Zeile M9
 
 ## Manuell testen
+
+**M8 (Elementor-Widget):** Kein REST-Test moeglich — braucht ein echtes WordPress mit aktivem
+Elementor. Auf `solar.local`: Seite mit Elementor bearbeiten, Widget-Panel durchsuchen nach
+"AI Chat" (Icon `eicon-chat`), reinziehen. Fuer jeden der 4 `display_mode`-Werte einmal prüfen:
+- **inline:** identisch zum bisherigen `[wpais_chat]`-Shortcode-Verhalten (M3)
+- **floating:** kleine runde Bubble unten rechts im Viewport, Klick oeffnet das Panel darueber
+- **popup:** Button erscheint genau da, wo das Widget in der Seite platziert wurde; Klick
+  oeffnet das Panel zentriert mit abgedunkeltem Hintergrund
+- **sidebar:** Panel nimmt die volle Bildschirmhoehe rechts ein, ohne Klick sichtbar
+
+Style-Controls (Tab "Stil") einzeln durchtesten: `primary_color` sollte Sende-Button/Cursor/Links
+sofort im Editor-Live-Preview aendern (kein Reload noetig — Elementor generiert das CSS live),
+`bubble_color` nur die Nutzer-Sprechblase, `border_radius`/`spacing` sichtbar, `icon` nur bei
+floating/popup ueberhaupt als Control sichtbar (Bedingung via `condition`).
+**Noch nie gegen echtes Elementor verifiziert** — siehe "Bekannte Einschraenkungen".
+
+JS-Tests lokal/hier ausfuehrbar (kein WordPress noetig): `node --test tests-js/*.test.js`.
 
 **M7 (Tool Engine):** Kein neuer Endpunkt — testet sich ueber den bestehenden `/chat`-Endpunkt
 (M2-Anleitung unten). Voraussetzung: Wissensbasis hat mind. einen Eintrag (M4/M6), Provider
@@ -243,16 +283,24 @@ Standard-Modell hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klare
   `vendor/bin/pest` sind hier nicht ausführbar — betrifft ab M6 zusaetzlich `smalot/pdfparser`
   (composer.json-Eintrag ist ungetestet gegen die echte Bibliothek; `SmalotPdfTextExtractor` ist
   deshalb bewusst NICHT Teil der Unit-Test-Suite, siehe dortiger Docblock).
-- Alle M1–M7-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
+- Alle M1–M8-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
   Wegwerf-Shim laufen lassen (kein Teil des Repos), der `test()`/`expect()`/`beforeEach()` minimal
-  nachbildet und die echten Testdateien unveraendert einliest — 135/135 gruen (110 aus M1-M6 +
-  25 neue aus M7). **Bitte trotzdem einmal lokal `composer install && vendor/bin/pest` laufen
-  lassen**, um mit dem echten Test-Runner gegenzuchecken — das ist der einzige Weg, wie
-  `SmalotPdfTextExtractor` gegen die echte `smalot/pdfparser`-Klasse ueberhaupt geprüft wird; ein
-  kurzer manueller Test mit einer echten PDF-Datei (siehe "Manuell testen" oben) waere zusaetzlich
-  sinnvoll, bevor M6 als wirklich fertig gilt. Fuer M7 zusaetzlich sinnvoll: der M7-Abschnitt unter
-  "Manuell testen" oben (echter Provider, echter Tool-Aufruf) — das Tool-Loop-Verhalten selbst ist
-  gut durch Unit-Tests abgesichert, aber noch nie gegen eine echte OpenAI/Anthropic-Antwort gelaufen.
+  nachbildet und die echten Testdateien unveraendert einliest — 141/141 gruen (135 aus M1-M7 +
+  6 neue aus M8, `ChatWidgetRendererTest`). **Bitte trotzdem einmal lokal
+  `composer install && vendor/bin/pest` laufen lassen**, um mit dem echten Test-Runner
+  gegenzuchecken — das ist der einzige Weg, wie `SmalotPdfTextExtractor` gegen die echte
+  `smalot/pdfparser`-Klasse ueberhaupt geprüft wird; ein kurzer manueller Test mit einer echten
+  PDF-Datei (siehe "Manuell testen" oben) waere zusaetzlich sinnvoll, bevor M6 als wirklich fertig
+  gilt. Fuer M7 zusaetzlich sinnvoll: der M7-Abschnitt unter "Manuell testen" oben (echter
+  Provider, echter Tool-Aufruf) — das Tool-Loop-Verhalten selbst ist gut durch Unit-Tests
+  abgesichert, aber noch nie gegen eine echte OpenAI/Anthropic-Antwort gelaufen.
+- **Neu seit M8:** `tests-js/` existiert jetzt (`node:test`, `node --test tests-js/*.test.js`,
+  14 Tests gruen) — deckt aber nur die reinen Funktionen aus `wpais-chat.js` ab, NICHT `initChat()`
+  selbst (DOM-Manipulation, Launcher-Toggle-Logik) und schon gar nicht `ChatWidget.php`
+  (`\Elementor\Widget_Base` ist ohne echtes Elementor-Plugin nicht ladbar, auch nicht ueber den
+  PHP-Shim). Alle 4 Display-Modi/Style-Controls sind deshalb bislang NUR durch sorgfaeltiges Lesen
+  des CSS/JS abgesichert, noch nie in einem echten Browser mit echtem Elementor gerendert — der
+  wichtigste naechste manuelle Schritt vor M9, siehe "Manuell testen" oben.
 - Integration-Tests (`tests/Integration/`, `WP_UnitTestCase`) brauchen zusätzlich eine
   WordPress-Test-Suite + Test-DB — siehe `tests/Integration/README.md` für den offenen
   Setup-Schritt. Testfälle für `WpdbApiKeyRepository` (M1), `WpdbConversationRepository` (M2)
@@ -299,7 +347,7 @@ das ganze Konto treffen wie der aktuelle.
 2. Erster interner Testkunde für M11 (Vorschlag: gfr-industriemontagen.de)
 3. Lizenzserver-Wahl für Phase 2 (Freemius vs. EDD Software Licensing vs. Eigenbau)
 
-## Weitere offene Punkte aus M1–M7 (nicht blockierend, aber im Hinterkopf behalten)
+## Weitere offene Punkte aus M1–M8 (nicht blockierend, aber im Hinterkopf behalten)
 
 1. `AnthropicProvider::embed()` wirft `UnsupportedCapabilityException` (Anthropic hat keine
    Embeddings-API) — für M4 (Knowledge Engine) muss ein embeddings-fähiger Provider konfiguriert
@@ -316,9 +364,12 @@ das ganze Konto treffen wie der aktuelle.
    runde Klammern enthält (z. B. `[x](https://foo.com/(bar))`), werden am ersten `)` abgeschnitten
    — sicherheitsunkritisch (nicht-http(s)/mailto-URLs landen ohnehin auf `#`), aber kosmetisch
    nicht ganz korrekt. Nicht behoben, um die Regex nicht unnötig zu verkomplizieren.
-6. M3 implementiert nur `mode="inline"` mit echtem CSS/Verhalten; `floating`/`popup`/`sidebar`
-   werden zwar als `data-mode`-Wert akzeptiert (`ChatWidgetRenderer::ALLOWED_MODES`), haben aber
-   noch kein eigenes Verhalten — das ist laut Bauplan M8 ("Alle 4 Display-Modi funktionieren").
+6. ~~M3 implementiert nur `mode="inline"`~~ — seit M8 haben alle 4 Modi echtes CSS/JS-Verhalten
+   (siehe M8-Eintrag oben unter "Stand"). Offen geblieben: noch nie in einem echten Browser mit
+   echtem Elementor gerendert/angeklickt (siehe "Bekannte Einschraenkungen" — kein WordPress in
+   dieser Sandbox), Live-Vorschau/Styling-Controls-Wirkung sind nur durch sorgfaeltiges Lesen von
+   `ChatWidget.php` gegen bekannte Elementor-Control-Konventionen abgesichert, nicht durch
+   tatsaechliches Ausfuehren.
 7. Kein Admin-UI, um den `[wpais_chat]`-Shortcode-Text irgendwo anzuzeigen/zu kopieren — Nutzer
    muss ihn manuell in eine Seite einfügen. Ggf. Kandidat für einen späteren Settings-Hinweis.
 8. `wpais_ingest_document`/`wpais_rescan_documents` (Bauplan Abschnitt 13, Action Scheduler)
@@ -371,9 +422,24 @@ das ganze Konto treffen wie der aktuelle.
 19. `ConversationService::MAX_TOOL_ITERATIONS` (aktuell 5) ist eine Code-Konstante, kein
     Admin-Setting — fuer Phase 1 laut Bauplan in Ordnung, waere aber ein sinnvoller Kandidat fuer
     das M11-Admin-Dashboard, falls sich 5 in der Praxis als zu niedrig/hoch herausstellt.
+20. Das `icon`-Control (M8) unterstuetzt nur Font-Awesome-Klassennamen, keine SVG-Upload-Icons
+    (Elementors ICONS-Control erlaubt beides) — waehlt ein Admin ein SVG-Icon, faellt die
+    Launcher-Bubble still auf das JS-seitige Standard-Icon zurueck, kein Fehler, aber auch keine
+    Rueckmeldung, warum das eigene Icon nicht erscheint. Bewusste Vereinfachung (Begruendung:
+    `ChatWidget::render()`-Kommentar), Kandidat fuer eine spaetere Erweiterung ueber
+    `Icons_Manager::render_icon()`.
+21. `sidebar`-Modus (M8) ist immer sichtbar, kein Ein-/Ausklappen — bei kleinen Viewports nimmt
+    das dauerhaft `min(360px, 100vw)` Breite ein. Einfachste korrekte Lesart von "Sidebar" fuer
+    Phase 1 (Bauplan macht dazu keine Vorgabe), waere aber ein Kandidat fuer einen spaeteren
+    Collapse-Toggle, falls sich das in der Praxis als zu aufdringlich erweist.
+22. Die Launcher-Bubble-Icons (floating/popup, M8) setzen voraus, dass Font Awesome bereits
+    sitewide geladen ist — was bei aktivem Elementor praktisch immer zutrifft (Elementor haengt
+    selbst davon ab), aber nicht explizit von diesem Plugin sichergestellt wird. Faellt eine
+    Elementor-Konfiguration das Standard-FA-Enqueue weg, bleibt das Icon unsichtbar (leerer
+    Button), kein Absturz.
 
 ## Wie im neuen Chat weitermachen
 
 `BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder verlinken, dann reicht:
-"Fahre mit M8 (Elementor-Widget) fort" — der neue Chat hat damit den vollen Kontext, ohne dass die
-Grundsatzentscheidungen erneut diskutiert werden müssen.
+"Fahre mit M9 (Security-Härtung) fort" — der neue Chat hat damit den vollen Kontext, ohne dass
+die Grundsatzentscheidungen erneut diskutiert werden müssen.
