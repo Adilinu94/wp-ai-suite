@@ -165,4 +165,40 @@ final class WpdbConversationRepository implements ConversationRepositoryInterfac
             ['%d', '%s', '%s', '%d', '%d', '%s'],
         );
     }
+
+    public function delete(int $conversationId): void
+    {
+        // wpais_usage_logs bleibt bewusst unangetastet: aggregierte Kosten-/Token-Zahlen ohne
+        // Nachrichteninhalt sind keine personenbezogenen Daten im Sinne der DSGVO-Loeschpflicht
+        // (Bauplan Abschnitt 9), sondern eine legitime Kostenabrechnung des Website-Betreibers.
+        // Kein FK-Constraint auf conversation_id, ein "verwaister" Verweis ist unschaedlich.
+        $this->wpdb->delete($this->messagesTable(), ['conversation_id' => $conversationId], ['%d']);
+        $this->wpdb->delete($this->conversationsTable(), ['id' => $conversationId], ['%d']);
+    }
+
+    /**
+     * Bauplan Abschnitt 9 ("konfigurierbare Aufbewahrungsfrist", M9) — von der taeglichen
+     * WP-Cron-Aufgabe genutzt (siehe Security\RetentionCleanup). Prueft
+     * wpais_conversations.updated_at (wird bei jedem appendMessage() aktualisiert, siehe dort) —
+     * eine seit $threshold inaktive Konversation gilt als abgelaufen, unabhaengig vom
+     * urspruenglichen Erstellungsdatum.
+     *
+     * @return int Anzahl geloeschter Konversationen.
+     */
+    public function deleteOlderThan(\DateTimeImmutable $threshold): int
+    {
+        $thresholdMysql = $threshold->format('Y-m-d H:i:s');
+
+        /** @var string[] $expiredIds */
+        $expiredIds = $this->wpdb->get_col($this->wpdb->prepare(
+            "SELECT id FROM {$this->conversationsTable()} WHERE updated_at < %s",
+            $thresholdMysql,
+        ));
+
+        foreach ($expiredIds as $id) {
+            $this->delete((int) $id);
+        }
+
+        return count($expiredIds);
+    }
 }

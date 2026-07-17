@@ -26,4 +26,20 @@ interface ConversationRepositoryInterface
 
     /** Fuer die Kostenschaetzung im Admin-Bereich (Abschnitt 11), unabhaengig von wpais_messages. */
     public function logUsage(int $conversationId, string $provider, string $model, int $tokensInput, int $tokensOutput): void;
+
+    /**
+     * M9 (DSGVO, "manuelle Konversation-loeschen-Aktion"): loescht die Konversation und alle
+     * ihre Nachrichten unwiderruflich. Kein Fehler, wenn $conversationId nicht existiert (bereits
+     * geloescht = Zielzustand bereits erreicht).
+     */
+    public function delete(int $conversationId): void;
+
+    /**
+     * M9 (DSGVO, "konfigurierbare Aufbewahrungsfrist"): loescht alle Konversationen (inkl.
+     * Nachrichten), die seit $threshold nicht mehr aktualisiert wurden (siehe
+     * WpdbConversationRepository::deleteOlderThan()-Docblock fuer das genaue Kriterium).
+     *
+     * @return int Anzahl geloeschter Konversationen.
+     */
+    public function deleteOlderThan(\DateTimeImmutable $threshold): int;
 }

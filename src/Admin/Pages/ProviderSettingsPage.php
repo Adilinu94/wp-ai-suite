@@ -6,6 +6,7 @@ namespace WPAiSuite\Admin\Pages;
 
 use WPAiSuite\AiCore\Provider\ProviderFactory;
 use WPAiSuite\Security\ApiKeyRepositoryInterface;
+use WPAiSuite\Security\RetentionCleanup;
 
 /**
  * Phase-1-Umfang laut M1-DoD (Bauplan Abschnitt 15): Provider-Auswahl + API-Key-Eingabe, schreibt
@@ -29,6 +30,16 @@ final class ProviderSettingsPage
     private const MANAGED_KEY_FIELDS = ['openai', 'anthropic', 'custom'];
     private const OPTION_DEFAULT_MODEL_PREFIX = 'wpais_default_model_';
 
+    /**
+     * M9: RateLimiter/RetentionCleanup selbst kennen keine WP-Optionen (nehmen fertige Werte
+     * ueber ihren Konstruktor entgegen, siehe deren Docblocks) — die Optionsnamen gehoeren
+     * deshalb hierher, zur Klasse, die das Einstellungsformular dafuer rendert/speichert, genau
+     * wie bei allen anderen Optionen auf dieser Seite. Plugin.php liest sie beim Verdrahten.
+     */
+    public const OPTION_RATE_LIMIT_MAX = 'wpais_rate_limit_max';
+    public const OPTION_RATE_LIMIT_WINDOW = 'wpais_rate_limit_window_seconds';
+    public const DEFAULT_RATE_LIMIT_MAX = 20;
+    public const DEFAULT_RATE_LIMIT_WINDOW = 600;
     public function __construct(
         private readonly ApiKeyRepositoryInterface $apiKeys,
         private readonly ProviderFactory $providerFactory,
@@ -85,6 +96,10 @@ final class ProviderSettingsPage
         $this->renderModelField('anthropic', __('Anthropic Standard-Modell', 'wp-ai-suite'), 'z.B. claude-sonnet-5');
         $this->renderCustomProviderFields();
 
+        echo '</tbody></table>';
+        echo '<h2>' . esc_html__('Sicherheit', 'wp-ai-suite') . '</h2>';
+        echo '<table class="form-table"><tbody>';
+        $this->renderSecurityFields();
         echo '</tbody></table>';
         submit_button(__('Speichern', 'wp-ai-suite'));
         echo '</form></div>';
@@ -163,6 +178,31 @@ final class ProviderSettingsPage
         $this->renderModelField('custom', __('OpenAI-kompatibel — Standard-Modell', 'wp-ai-suite'), 'z.B. deepseek-chat');
     }
 
+    /** M9: Rate-Limiting + Aufbewahrungsfrist (Bauplan Abschnitt 9). */
+    private function renderSecurityFields(): void
+    {
+        echo '<tr><th scope="row"><label for="wpais_rate_limit_max">' . esc_html__('Rate-Limit: max. Nachrichten', 'wp-ai-suite') . '</label></th><td>';
+        printf(
+            '<input type="number" min="1" step="1" class="small-text" name="wpais_rate_limit_max" id="wpais_rate_limit_max" value="%s" /> ',
+            esc_attr((string) get_option(self::OPTION_RATE_LIMIT_MAX, self::DEFAULT_RATE_LIMIT_MAX)),
+        );
+        esc_html_e('Nachrichten pro', 'wp-ai-suite');
+        printf(
+            ' <input type="number" min="1" step="1" class="small-text" name="wpais_rate_limit_window_seconds" id="wpais_rate_limit_window_seconds" value="%s" /> ',
+            esc_attr((string) get_option(self::OPTION_RATE_LIMIT_WINDOW, self::DEFAULT_RATE_LIMIT_WINDOW)),
+        );
+        esc_html_e('Sekunden, pro Konversation bzw. IP-Adresse.', 'wp-ai-suite');
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row"><label for="wpais_retention_days">' . esc_html__('Aufbewahrungsfrist (Tage)', 'wp-ai-suite') . '</label></th><td>';
+        printf(
+            '<input type="number" min="0" step="1" class="small-text" name="wpais_retention_days" id="wpais_retention_days" value="%s" />',
+            esc_attr((string) get_option(RetentionCleanup::OPTION_RETENTION_DAYS, RetentionCleanup::DEFAULT_RETENTION_DAYS)),
+        );
+        echo '<p class="description">' . esc_html__('Konversationen ohne neue Nachricht seit dieser Anzahl Tage werden taeglich per Cron geloescht (inkl. aller Nachrichten). 0 = Aufbewahrungsfrist deaktiviert (nichts wird automatisch geloescht).', 'wp-ai-suite') . '</p>';
+        echo '</td></tr>';
+    }
+
     public function handleSave(): void
     {
         if (!current_user_can(self::CAPABILITY)) {
@@ -195,6 +235,20 @@ final class ProviderSettingsPage
 
         if (isset($_POST['wpais_custom_label'])) {
             update_option(self::OPTION_CUSTOM_LABEL, sanitize_text_field(wp_unslash($_POST['wpais_custom_label'])));
+        }
+
+        if (isset($_POST['wpais_rate_limit_max'])) {
+            update_option(self::OPTION_RATE_LIMIT_MAX, max(1, (int) $_POST['wpais_rate_limit_max']));
+        }
+
+        if (isset($_POST['wpais_rate_limit_window_seconds'])) {
+            update_option(self::OPTION_RATE_LIMIT_WINDOW, max(1, (int) $_POST['wpais_rate_limit_window_seconds']));
+        }
+
+        if (isset($_POST['wpais_retention_days'])) {
+            // 0 ist gueltig (= Retention deaktiviert, siehe RetentionCleanup::run()), negative
+            // Werte ergeben fachlich keinen Sinn.
+            update_option(RetentionCleanup::OPTION_RETENTION_DAYS, max(0, (int) $_POST['wpais_retention_days']));
         }
 
         $redirectTarget = wp_get_referer();

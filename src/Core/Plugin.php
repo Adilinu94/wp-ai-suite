@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WPAiSuite\Core;
 
 use WPAiSuite\Admin\Pages\ProviderSettingsPage;
+use WPAiSuite\Admin\PrivacyNoticeAdminNotice;
 use WPAiSuite\AiCore\Conversation\Repository\ConversationRepositoryInterface;
 use WPAiSuite\AiCore\Conversation\Repository\WpdbConversationRepository;
 use WPAiSuite\AiCore\Prompt\SystemPromptBuilder;
@@ -27,8 +28,13 @@ use WPAiSuite\Rest\Controllers\ConversationController;
 use WPAiSuite\Rest\Controllers\DocumentsController;
 use WPAiSuite\Security\ApiKeyRepositoryInterface;
 use WPAiSuite\Security\ApiKeyVault;
+use WPAiSuite\Security\PromptGuard;
+use WPAiSuite\Security\RateLimiter;
+use WPAiSuite\Security\RetentionCleanup;
+use WPAiSuite\Security\TransientStoreInterface;
 use WPAiSuite\Security\VaultException;
 use WPAiSuite\Security\WpdbApiKeyRepository;
+use WPAiSuite\Security\WpTransientStore;
 
 /**
  * Composition Root. Ab M1 werden hier Provider-, Knowledge-, Tool- und
@@ -68,6 +74,7 @@ final class Plugin
         $this->registerConversationServices();
         $this->registerFrontendServices();
         $this->registerKnowledgeServices();
+        $this->registerSecurityServices();
     }
 
     public function boot(): void
@@ -82,6 +89,7 @@ final class Plugin
         $this->bootConversationServices();
         $this->bootFrontendServices();
         $this->bootKnowledgeServices();
+        $this->bootSecurityServices();
 
         /**
          * Erweiterungspunkt fuer spaetere Module (Admin, REST, Frontend, ...).
@@ -165,6 +173,8 @@ final class Plugin
                 $c->get(ActiveProviderResolver::class),
                 $c->get(VectorStoreInterface::class),
                 $c->get(DocumentRepositoryInterface::class),
+                $c->get(RateLimiter::class),
+                $c->get(PromptGuard::class),
             );
         });
 
@@ -266,5 +276,51 @@ final class Plugin
     private function bootKnowledgeServices(): void
     {
         $this->container->get(DocumentsController::class)->register();
+    }
+
+    /**
+     * M9 (Security-Haertung, Bauplan Abschnitt 9). RateLimiter/PromptGuard sind reine
+     * Anwendungslogik (kein WP-Options-Zugriff im Konstruktor, siehe deren Docblocks) —
+     * ProviderSettingsPage besitzt die Options-Namen (rendert/speichert das Formular dafuer),
+     * hier werden nur die aktuellen Werte ausgelesen und in die fertigen Objekte gereicht.
+     */
+    private function registerSecurityServices(): void
+    {
+        $this->container->set(TransientStoreInterface::class, static function (): TransientStoreInterface {
+            return new WpTransientStore();
+        });
+
+        $this->container->set(RateLimiter::class, static function (Container $c): RateLimiter {
+            return new RateLimiter(
+                $c->get(TransientStoreInterface::class),
+                (int) get_option(ProviderSettingsPage::OPTION_RATE_LIMIT_MAX, ProviderSettingsPage::DEFAULT_RATE_LIMIT_MAX),
+                (int) get_option(ProviderSettingsPage::OPTION_RATE_LIMIT_WINDOW, ProviderSettingsPage::DEFAULT_RATE_LIMIT_WINDOW),
+            );
+        });
+
+        $this->container->set(PromptGuard::class, static function (): PromptGuard {
+            return new PromptGuard();
+        });
+
+        $this->container->set(RetentionCleanup::class, static function (Container $c): RetentionCleanup {
+            return new RetentionCleanup($c->get(ConversationRepositoryInterface::class));
+        });
+
+        $this->container->set(PrivacyNoticeAdminNotice::class, static function (): PrivacyNoticeAdminNotice {
+            return new PrivacyNoticeAdminNotice();
+        });
+    }
+
+    private function bootSecurityServices(): void
+    {
+        $this->container->get(RetentionCleanup::class)->register();
+        // Kein neuer Aktivierungs-/Deaktivierungscode im Hauptplugin-File noetig: wp-ai-suite.php
+        // feuert bereits bei Deaktivierung die eigene Action wpais_deactivated (siehe dortiger
+        // Kommentar), genau dafuer gedacht — Plugin-Code haengt sich hier nur ein, statt das
+        // Bootstrap-File um Wissen ueber jede einzelne Klasse zu erweitern, die bei Deaktivierung
+        // aufraeumen muss.
+        add_action('wpais_deactivated', [RetentionCleanup::class, 'unschedule']);
+
+        $this->container->get(PrivacyNoticeAdminNotice::class)->register();
     }
 }

@@ -16,6 +16,8 @@ use WPAiSuite\Knowledge\Embedding\EmbeddingService;
 use WPAiSuite\Knowledge\RagService;
 use WPAiSuite\Knowledge\RetrievedSource;
 use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
+use WPAiSuite\Security\PromptGuard;
+use WPAiSuite\Security\RateLimiter;
 use WPAiSuite\Tools\Builtin\KnowledgeSearchTool;
 use WPAiSuite\Tools\Builtin\WooCommerceProductSearchTool;
 use WPAiSuite\Tools\ToolRegistry;
@@ -51,6 +53,15 @@ use WPAiSuite\Tools\ToolRegistry;
  * ConversationService::handleUserMessage() — dieser Controller baut nur die ToolRegistry (analog
  * zu RagService: pro Request, siehe unten) und reicht sie durch, weiss selbst nichts von
  * Tool-Aufrufen.
+ *
+ * M9 (Security-Haertung): zwei zusaetzliche Pruefungen VOR startSse() (dieselbe Begruendung wie
+ * beim Provider-503 oben — ein sauberer WP_Error statt eines kaputten SSE-Streams). RateLimiter
+ * schluesselt bevorzugt ueber session_token (stabil ueber die ganze Konversation), faellt fuer
+ * den allerersten Request einer neuen Konversation (noch kein Token vom Client) auf die
+ * anfragende IP zurueck — die IP wird dabei NICHT gespeichert, nur kurzlebig als Cache-Schluessel
+ * verwendet (siehe RateLimiter-Docblock). PromptGuard prueft NUR den Nachrichtentext, ist eine
+ * zusaetzliche Filterschicht, keine Voraussetzung fuer die eigentliche Sicherheit (siehe dortiger
+ * Docblock).
  */
 final class ChatController
 {
@@ -60,6 +71,8 @@ final class ChatController
         private readonly ActiveProviderResolver $providerResolver,
         private readonly VectorStoreInterface $vectorStore,
         private readonly DocumentRepositoryInterface $documents,
+        private readonly RateLimiter $rateLimiter,
+        private readonly PromptGuard $promptGuard,
     ) {
     }
 
@@ -98,6 +111,29 @@ final class ChatController
             return new \WP_Error('wpais_empty_message', __('Nachricht darf nicht leer sein.', 'wp-ai-suite'), ['status' => 400]);
         }
 
+        $sessionTokenParam = $request->get_param('session_token');
+        $sessionToken = is_string($sessionTokenParam) && $sessionTokenParam !== '' ? $sessionTokenParam : null;
+        $rateLimitKey = $sessionToken ?? ('ip:' . (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+
+        if (!$this->rateLimiter->attempt($rateLimitKey)) {
+            return new \WP_Error(
+                'wpais_rate_limited',
+                __('Zu viele Nachrichten in kurzer Zeit. Bitte kurz warten und erneut versuchen.', 'wp-ai-suite'),
+                ['status' => 429],
+            );
+        }
+
+        if ($this->promptGuard->isSuspicious($message)) {
+            // Bewusst keine Details darueber, WAS erkannt wurde (siehe PromptGuard-Docblock) —
+            // eine generische Ablehnung verraet einem Angreifer nicht, welches Muster gegriffen
+            // hat und wie es sich umgehen liesse.
+            return new \WP_Error(
+                'wpais_message_rejected',
+                __('Deine Nachricht konnte nicht verarbeitet werden. Bitte formuliere sie anders.', 'wp-ai-suite'),
+                ['status' => 400],
+            );
+        }
+
         try {
             [$provider, $model] = $this->providerResolver->resolve();
         } catch (NoActiveProviderException $e) {
@@ -119,8 +155,6 @@ final class ChatController
 
         $conversationService = new ConversationService($this->conversations, $this->promptBuilder, $provider, $model, $ragService, $toolRegistry);
 
-        $sessionTokenParam = $request->get_param('session_token');
-        $sessionToken = is_string($sessionTokenParam) && $sessionTokenParam !== '' ? $sessionTokenParam : null;
         $wpUserId = get_current_user_id() ?: null;
 
         try {

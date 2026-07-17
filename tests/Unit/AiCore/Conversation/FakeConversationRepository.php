@@ -16,6 +16,9 @@ final class FakeConversationRepository implements ConversationRepositoryInterfac
     /** @var array<int, StoredMessage[]> */
     private array $messages = [];
 
+    /** @var array<int, \DateTimeImmutable> M9: spiegelt wpais_conversations.updated_at. */
+    private array $updatedAt = [];
+
     /** @var array<int, array{provider:string, model:string, tokens_input:int, tokens_output:int}> */
     public array $usageLogs = [];
 
@@ -33,8 +36,15 @@ final class FakeConversationRepository implements ConversationRepositoryInterfac
 
         $this->conversations[$conversation->id] = $conversation;
         $this->messages[$conversation->id] = [];
+        $this->updatedAt[$conversation->id] = new \DateTimeImmutable();
 
         return $conversation;
+    }
+
+    /** Nur fuer Tests: erlaubt, den Aktivitaets-Zeitstempel einer Konversation zu simulieren. */
+    public function setUpdatedAt(int $conversationId, \DateTimeImmutable $updatedAt): void
+    {
+        $this->updatedAt[$conversationId] = $updatedAt;
     }
 
     public function findByToken(string $sessionToken): ?Conversation
@@ -56,6 +66,7 @@ final class FakeConversationRepository implements ConversationRepositoryInterfac
     public function appendMessage(int $conversationId, StoredMessage $message): void
     {
         $this->messages[$conversationId][] = $message;
+        $this->updatedAt[$conversationId] = new \DateTimeImmutable();
     }
 
     public function logUsage(int $conversationId, string $provider, string $model, int $tokensInput, int $tokensOutput): void
@@ -66,5 +77,24 @@ final class FakeConversationRepository implements ConversationRepositoryInterfac
             'tokens_input' => $tokensInput,
             'tokens_output' => $tokensOutput,
         ];
+    }
+
+    public function delete(int $conversationId): void
+    {
+        unset($this->conversations[$conversationId], $this->messages[$conversationId], $this->updatedAt[$conversationId]);
+    }
+
+    public function deleteOlderThan(\DateTimeImmutable $threshold): int
+    {
+        $deleted = 0;
+
+        foreach ($this->updatedAt as $conversationId => $updatedAt) {
+            if ($updatedAt < $threshold) {
+                $this->delete($conversationId);
+                $deleted++;
+            }
+        }
+
+        return $deleted;
     }
 }

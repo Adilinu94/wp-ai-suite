@@ -19,8 +19,13 @@ if (class_exists(\WPAiSuite\Core\Database\Migrator::class)) {
     \WPAiSuite\Core\Database\Migrator::dropTables();
 }
 
+// M9: Cron-Event wird eigentlich schon bei Deaktivierung entfernt (wpais_deactivated-Hook,
+// siehe Plugin.php), hier zusaetzlich defensiv (falls Deinstallation je ohne vorherige
+// Deaktivierung erreichbar sein sollte).
+wp_clear_scheduled_hook('wpais_retention_cleanup');
+
 // Alle Plugin-Options entfernen. Liste erweitert sich mit jedem Meilenstein,
-// der neue Options einfuehrt (M1: Provider-Settings, M9: Retention-Settings, ...).
+// der neue Options einfuehrt (M1: Provider-Settings, M9: Retention-/Rate-Limit-Settings).
 $wpais_options = [
     'wpais_db_version',
     'wpais_active_provider',
@@ -30,6 +35,10 @@ $wpais_options = [
     'wpais_default_model_openai',
     'wpais_default_model_anthropic',
     'wpais_default_model_custom',
+    // M9: Retention-/Rate-Limit-Settings.
+    'wpais_retention_days',
+    'wpais_rate_limit_max',
+    'wpais_rate_limit_window_seconds',
 ];
 
 foreach ($wpais_options as $wpais_option) {
