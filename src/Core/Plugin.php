@@ -46,6 +46,21 @@ final class Plugin
         return self::$instance ??= new self();
     }
 
+    /**
+     * M8: einzige Ausnahme vom sonst durchgaengigen Konstruktor-Injection-Muster dieses Plugins.
+     * \Elementor\Widget_Base-Subklassen (ChatWidget) muessen mit Elementors eigenem, parameterlosem
+     * Konstruktor kompatibel bleiben — Elementor instanziiert Widgets teils selbst intern (z.B.
+     * beim Rendern gespeicherter Seiten, nicht nur bei der einmaligen Registrierung), ein eigener
+     * Konstruktor mit Pflicht-Parametern dort wuerde fehlschlagen. ChatWidget kann seine
+     * Abhaengigkeiten deshalb nur lazy ueber diesen Zugriffspunkt holen statt injiziert zu
+     * bekommen — bewusst eng auf genau diesen Fall begrenzt, kein allgemeiner Service-Locator-
+     * Ersatz fuer normale Konstruktor-Injection anderswo im Plugin.
+     */
+    public static function container(): Container
+    {
+        return self::instance()->container;
+    }
+
     private function __construct()
     {
         $this->container = new Container();
@@ -188,6 +203,15 @@ final class Plugin
     {
         $this->container->get(AssetManager::class)->registerAssets();
         $this->container->get(Shortcode::class)->register();
+
+        // M8: Bauplan Abschnitt 10, Registrierungs-Schnipsel. add_action() selbst ist auf jeder
+        // Seite unbedenklich (auch ohne Elementor) — der Hook elementor/widgets/register wird von
+        // Elementor SELBST gefeuert und existiert schlicht nicht, wenn Elementor nicht aktiv ist;
+        // die ChatWidget-Klasse (die \Elementor\Widget_Base erweitert) wird deshalb auch erst
+        // innerhalb dieses Callbacks referenziert/autogeladen, nie eager beim Boot.
+        add_action('elementor/widgets/register', static function (\Elementor\Widgets_Manager $widgetsManager): void {
+            $widgetsManager->register(new \WPAiSuite\Elementor\ChatWidget());
+        });
     }
 
     /**

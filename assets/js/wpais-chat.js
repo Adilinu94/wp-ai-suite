@@ -1,5 +1,5 @@
 /**
- * WP AI Suite — Chat-Widget-Frontend (M3).
+ * WP AI Suite — Chat-Widget-Frontend (M3), Anzeigemodi floating/popup/sidebar (M8).
  *
  * Bewusst ein einziges, abhaengigkeitsfreies Vanilla-JS-Bundle (kein Build-Schritt, kein
  * npm-Paket) — konsistent mit Bauplan-Regel 2 ("kleiner MVP, keine Architektur ueber den Bedarf
@@ -10,6 +10,12 @@
  * EventSource — das kann kein POST mit Custom-Headern) und `GET /wpais/v1/conversations/{token}`
  * aus M2. Konfiguration (REST-URLs, Nonce) kommt ueber window.wpaisChatConfig
  * (wp_localize_script, siehe AssetManager.php).
+ *
+ * M8: `data-mode="floating"` und `data-mode="popup"` bekommen zusaetzlich einen
+ * `.wpais-chat__launcher`-Button (die "Bubble") und wickeln das eigentliche Chat-UI in ein
+ * `.wpais-chat__panel`, das per Klick ein-/ausgeblendet wird (CSS: `.wpais-chat--open
+ * .wpais-chat__panel`). `inline`/`sidebar` bleiben immer offen, keine Aenderung ggue. M3 ausser
+ * dem CSS-Positionierungsverhalten von `sidebar` selbst.
  */
 (function (root) {
 	'use strict';
@@ -194,10 +200,17 @@
 	function initChat(container, widgetId) {
 		var mode = container.dataset.mode || 'inline';
 		var welcome = container.dataset.welcome || __('Hallo! Wie kann ich dir helfen?');
+		var iconClass = container.dataset.icon || '';
 		var storageKey = 'wpaisSessionToken:' + widgetId;
 
 		container.classList.add('wpais-chat--' + mode);
-		container.innerHTML =
+
+		// M8: floating/popup brauchen eine Launcher-Bubble + einen ein-/ausklappbaren
+		// .wpais-chat__panel-Wrapper (siehe CSS-Kopfkommentar); inline/sidebar rendern das
+		// Kastenlayout weiterhin direkt auf .wpais-chat selbst, unveraendert seit M3.
+		var needsToggle = mode === 'floating' || mode === 'popup';
+
+		var panelInnerHtml =
 			'<div class="wpais-chat__messages" role="log" aria-live="polite"></div>' +
 			'<form class="wpais-chat__form">' +
 			'<textarea class="wpais-chat__input" rows="1" placeholder="' +
@@ -210,10 +223,35 @@
 			'">&#8594;</button>' +
 			'</form>';
 
-		var messagesEl = container.querySelector('.wpais-chat__messages');
-		var formEl = container.querySelector('.wpais-chat__form');
-		var inputEl = container.querySelector('.wpais-chat__input');
-		var sendBtn = container.querySelector('.wpais-chat__send');
+		var launcherEl = null;
+		var panelEl = null;
+
+		if (needsToggle) {
+			var launcherIconHtml = iconClass
+				? '<i class="' + escapeHtml(iconClass) + '" aria-hidden="true"></i>'
+				: '<span aria-hidden="true">&#128172;</span>';
+
+			container.innerHTML =
+				'<button type="button" class="wpais-chat__launcher" aria-expanded="false" aria-label="' +
+				escapeHtml(__('Chat öffnen')) +
+				'">' +
+				launcherIconHtml +
+				'</button>' +
+				'<div class="wpais-chat__panel">' +
+				panelInnerHtml +
+				'</div>';
+
+			launcherEl = container.querySelector('.wpais-chat__launcher');
+			panelEl = container.querySelector('.wpais-chat__panel');
+		} else {
+			container.innerHTML = panelInnerHtml;
+			panelEl = container;
+		}
+
+		var messagesEl = panelEl.querySelector('.wpais-chat__messages');
+		var formEl = panelEl.querySelector('.wpais-chat__form');
+		var inputEl = panelEl.querySelector('.wpais-chat__input');
+		var sendBtn = panelEl.querySelector('.wpais-chat__send');
 
 		var sessionToken = null;
 		try {
@@ -440,6 +478,39 @@
 				}
 			}
 		});
+
+		// M8: Oeffnen/Schliessen fuer floating/popup. inline/sidebar haben keinen Launcher und
+		// sind dadurch immer "offen" — dieser ganze Block laeuft fuer sie einfach nicht.
+		if (launcherEl) {
+			function setOpen(isOpen) {
+				container.classList.toggle('wpais-chat--open', isOpen);
+				launcherEl.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+				if (isOpen) {
+					inputEl.focus();
+				}
+			}
+
+			launcherEl.addEventListener('click', function () {
+				setOpen(!container.classList.contains('wpais-chat--open'));
+			});
+
+			hasWindow &&
+				root.document.addEventListener('keydown', function (e) {
+					if (e.key === 'Escape' && container.classList.contains('wpais-chat--open')) {
+						setOpen(false);
+					}
+				});
+
+			hasWindow &&
+				root.document.addEventListener('click', function (e) {
+					if (
+						container.classList.contains('wpais-chat--open') &&
+						!container.contains(e.target)
+					) {
+						setOpen(false);
+					}
+				});
+		}
 
 		restoreHistory();
 	}
