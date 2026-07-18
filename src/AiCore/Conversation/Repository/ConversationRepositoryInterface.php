@@ -35,11 +35,20 @@ interface ConversationRepositoryInterface
     public function delete(int $conversationId): void;
 
     /**
-     * M9 (DSGVO, "konfigurierbare Aufbewahrungsfrist"): loescht alle Konversationen (inkl.
-     * Nachrichten), die seit $threshold nicht mehr aktualisiert wurden (siehe
+     * M9 (DSGVO, "konfigurierbare Aufbewahrungsfrist"): loescht alle Konversationen, die seit
+     * $threshold nicht mehr aktualisiert wurden (siehe
      * WpdbConversationRepository::deleteOlderThan()-Docblock fuer das genaue Kriterium).
      *
      * @return int Anzahl geloeschter Konversationen.
      */
     public function deleteOlderThan(\DateTimeImmutable $threshold): int;
+
+    /**
+     * M10 (Logs-Admin-UI, Bauplan Abschnitt 11: "einfache Tabelle aus wpais_usage_logs"). Neueste
+     * zuerst. Bleibt unberuehrt von delete()/deleteOlderThan() oben, siehe deren Docblocks
+     * (aggregierte Kosten-/Token-Zahlen sind keine personenbezogenen Daten).
+     *
+     * @return array<int, array{id:int, conversation_id:?int, provider:string, model:string, tokens_input:int, tokens_output:int, created_at:string}>
+     */
+    public function listUsageLogs(int $limit = 200): array;
 }

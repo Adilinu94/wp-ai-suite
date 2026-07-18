@@ -32,4 +32,12 @@ interface DocumentRepositoryInterface
 
     /** @return int Neue chunks.id (wird an VectorStoreInterface::upsert() als chunkId weitergereicht). */
     public function addChunk(int $documentId, int $chunkIndex, string $content, ?int $tokenCount): int;
+
+    /**
+     * M10 (Wissensbasis-Admin-UI, Bauplan Abschnitt 11: "Liste aller wpais_documents mit
+     * Status"). Neueste zuerst.
+     *
+     * @return StoredDocument[]
+     */
+    public function listAll(int $limit = 200): array;
 }

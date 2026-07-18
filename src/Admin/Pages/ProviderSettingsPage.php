@@ -15,10 +15,10 @@ use WPAiSuite\Security\RetentionCleanup;
  * Um M2 (ChatRequest braucht ein konkretes $model) nachgereicht: Standard-Modell pro Provider
  * (Abschnitt 11 nennt das bereits als Teil von "Settings", in M1 aber zunaechst ausgelassen).
  *
- * Der System-Prompt-Editor aus Abschnitt 11 gehoert weiterhin zur Prompt Engine im engeren Sinn
- * (Editor-UI, nicht die Builder-Logik aus M2) und ist bewusst NICHT Teil dieser Seite — siehe
- * Regel 2 ("Architektur nicht eigenmaechtig erweitern"). Kann als eigener Tab ergaenzt werden,
- * sobald dafuer Bedarf besteht; bis dahin nutzt SystemPromptBuilder den Default-Text.
+ * Der System-Prompt-Editor aus Abschnitt 11 (M10) ist seitdem Teil dieser Seite (eigener
+ * Abschnitt, `renderSystemPromptField()`/`wpais_system_prompt`) — bis M9 bewusst
+ * zurueckgestellt (Regel 2, "Architektur nicht eigenmaechtig erweitern"), bis dahin nutzte
+ * `SystemPromptBuilder` nur den Default-Text.
  */
 final class ProviderSettingsPage
 {
@@ -96,6 +96,10 @@ final class ProviderSettingsPage
         $this->renderModelField('anthropic', __('Anthropic Standard-Modell', 'wp-ai-suite'), 'z.B. claude-sonnet-5');
         $this->renderCustomProviderFields();
 
+        echo '</tbody></table>';
+        echo '<h2>' . esc_html__('System-Prompt', 'wp-ai-suite') . '</h2>';
+        echo '<table class="form-table"><tbody>';
+        $this->renderSystemPromptField();
         echo '</tbody></table>';
         echo '<h2>' . esc_html__('Sicherheit', 'wp-ai-suite') . '</h2>';
         echo '<table class="form-table"><tbody>';
@@ -203,6 +207,17 @@ final class ProviderSettingsPage
         echo '</td></tr>';
     }
 
+    /** M10: der in M1 bewusst zurueckgestellte System-Prompt-Editor (siehe Klassen-Docblock). */
+    private function renderSystemPromptField(): void
+    {
+        $value = (string) get_option('wpais_system_prompt', '');
+
+        echo '<tr><th scope="row"><label for="wpais_system_prompt">' . esc_html__('System-Prompt', 'wp-ai-suite') . '</label></th><td>';
+        echo '<textarea class="large-text code" rows="6" name="wpais_system_prompt" id="wpais_system_prompt">' . esc_textarea($value) . '</textarea>';
+        echo '<p class="description">' . esc_html__('Leer lassen fuer den eingebauten Standard-System-Prompt.', 'wp-ai-suite') . '</p>';
+        echo '</td></tr>';
+    }
+
     public function handleSave(): void
     {
         if (!current_user_can(self::CAPABILITY)) {
@@ -249,6 +264,13 @@ final class ProviderSettingsPage
             // 0 ist gueltig (= Retention deaktiviert, siehe RetentionCleanup::run()), negative
             // Werte ergeben fachlich keinen Sinn.
             update_option(RetentionCleanup::OPTION_RETENTION_DAYS, max(0, (int) $_POST['wpais_retention_days']));
+        }
+
+        if (isset($_POST['wpais_system_prompt'])) {
+            // sanitize_textarea_field statt sanitize_text_field: Zeilenumbrueche im
+            // System-Prompt sind gewollt (Absaetze, Listen), sollen nicht auf eine Zeile
+            // zusammenfallen.
+            update_option('wpais_system_prompt', sanitize_textarea_field(wp_unslash($_POST['wpais_system_prompt'])));
         }
 
         $redirectTarget = wp_get_referer();

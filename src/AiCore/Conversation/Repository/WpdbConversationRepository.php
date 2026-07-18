@@ -201,4 +201,28 @@ final class WpdbConversationRepository implements ConversationRepositoryInterfac
 
         return count($expiredIds);
     }
+
+    /**
+     * @return array<int, array{id:int, conversation_id:?int, provider:string, model:string, tokens_input:int, tokens_output:int, created_at:string}>
+     */
+    public function listUsageLogs(int $limit = 200): array
+    {
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->usageLogsTable()} ORDER BY created_at DESC LIMIT %d",
+                $limit,
+            ),
+            ARRAY_A,
+        );
+
+        return array_map(static fn (array $row): array => [
+            'id' => (int) $row['id'],
+            'conversation_id' => $row['conversation_id'] !== null ? (int) $row['conversation_id'] : null,
+            'provider' => (string) $row['provider'],
+            'model' => (string) $row['model'],
+            'tokens_input' => (int) $row['tokens_input'],
+            'tokens_output' => (int) $row['tokens_output'],
+            'created_at' => (string) $row['created_at'],
+        ], is_array($rows) ? $rows : []);
+    }
 }

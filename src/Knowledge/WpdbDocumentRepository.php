@@ -135,6 +135,26 @@ final class WpdbDocumentRepository implements DocumentRepositoryInterface
         $this->wpdb->delete($this->chunksTable(), ['document_id' => $documentId], ['%d']);
     }
 
+    /**
+     * M10 (Wissensbasis-Admin-UI): neueste zuerst, damit gerade hochgeladene/zuletzt
+     * fehlgeschlagene Dokumente oben stehen. $limit ist bewusst hart begrenzt (kein
+     * Pagination-UI in Phase 1, siehe FORTSETZUNG.md) statt unbegrenzt alle Zeilen zu holen.
+     *
+     * @return StoredDocument[]
+     */
+    public function listAll(int $limit = 200): array
+    {
+        $rows = $this->wpdb->get_results(
+            $this->wpdb->prepare(
+                "SELECT * FROM {$this->documentsTable()} ORDER BY updated_at DESC LIMIT %d",
+                $limit,
+            ),
+            ARRAY_A,
+        );
+
+        return array_map(fn (array $row): StoredDocument => $this->hydrate($row), is_array($rows) ? $rows : []);
+    }
+
     public function addChunk(int $documentId, int $chunkIndex, string $content, ?int $tokenCount): int
     {
         $this->wpdb->insert(
@@ -164,6 +184,8 @@ final class WpdbDocumentRepository implements DocumentRepositoryInterface
             status: (string) $row['status'],
             version: (int) $row['version'],
             checksum: $row['checksum'] !== null ? (string) $row['checksum'] : null,
+            errorMessage: $row['error_message'] !== null ? (string) $row['error_message'] : null,
+            updatedAt: isset($row['updated_at']) ? new \DateTimeImmutable((string) $row['updated_at']) : null,
         );
     }
 }

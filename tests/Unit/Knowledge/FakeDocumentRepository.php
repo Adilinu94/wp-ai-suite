@@ -44,7 +44,7 @@ final class FakeDocumentRepository implements DocumentRepositoryInterface
         $id = $existing->id ?? $this->nextDocumentId++;
         $version = $existing !== null ? $existing->version + 1 : 1;
 
-        $document = new StoredDocument($id, $sourceType, $sourceRef, $title, 'pending', $version, $checksum);
+        $document = new StoredDocument($id, $sourceType, $sourceRef, $title, 'pending', $version, $checksum, null, new \DateTimeImmutable());
         $this->documents[$id] = $document;
         $this->chunksByDocument[$id] ??= [];
 
@@ -53,21 +53,21 @@ final class FakeDocumentRepository implements DocumentRepositoryInterface
 
     public function markProcessing(int $documentId): void
     {
-        $this->setStatus($documentId, 'processing');
+        $this->setStatus($documentId, 'processing', null);
     }
 
     public function markProcessed(int $documentId): void
     {
-        $this->setStatus($documentId, 'processed');
+        $this->setStatus($documentId, 'processed', null);
     }
 
     public function markFailed(int $documentId, string $errorMessage): void
     {
-        $this->setStatus($documentId, 'failed');
+        $this->setStatus($documentId, 'failed', $errorMessage);
         $this->failedMessages[$documentId] = $errorMessage;
     }
 
-    private function setStatus(int $documentId, string $status): void
+    private function setStatus(int $documentId, string $status, ?string $errorMessage): void
     {
         $current = $this->documents[$documentId];
         $this->documents[$documentId] = new StoredDocument(
@@ -78,6 +78,8 @@ final class FakeDocumentRepository implements DocumentRepositoryInterface
             $status,
             $current->version,
             $current->checksum,
+            $errorMessage,
+            new \DateTimeImmutable(),
         );
     }
 
@@ -96,5 +98,13 @@ final class FakeDocumentRepository implements DocumentRepositoryInterface
         ];
 
         return $chunkId;
+    }
+
+    public function listAll(int $limit = 200): array
+    {
+        $documents = array_values($this->documents);
+        usort($documents, static fn (StoredDocument $a, StoredDocument $b): int => ($b->updatedAt ?? new \DateTimeImmutable('@0')) <=> ($a->updatedAt ?? new \DateTimeImmutable('@0')));
+
+        return array_slice($documents, 0, $limit);
     }
 }

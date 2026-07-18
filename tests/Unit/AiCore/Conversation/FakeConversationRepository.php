@@ -72,11 +72,19 @@ final class FakeConversationRepository implements ConversationRepositoryInterfac
     public function logUsage(int $conversationId, string $provider, string $model, int $tokensInput, int $tokensOutput): void
     {
         $this->usageLogs[] = [
+            'id' => count($this->usageLogs) + 1,
+            'conversation_id' => $conversationId,
             'provider' => $provider,
             'model' => $model,
             'tokens_input' => $tokensInput,
             'tokens_output' => $tokensOutput,
+            'created_at' => (new \DateTimeImmutable())->format('Y-m-d H:i:s'),
         ];
+    }
+
+    public function listUsageLogs(int $limit = 200): array
+    {
+        return array_slice(array_reverse($this->usageLogs), 0, $limit);
     }
 
     public function delete(int $conversationId): void

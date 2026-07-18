@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace WPAiSuite\Core;
 
 use WPAiSuite\Admin\Pages\ProviderSettingsPage;
+use WPAiSuite\Admin\Pages\KnowledgeBasePage;
+use WPAiSuite\Admin\Pages\UsageLogsPage;
 use WPAiSuite\Admin\PrivacyNoticeAdminNotice;
+use WPAiSuite\Admin\UsageCostEstimator;
 use WPAiSuite\AiCore\Conversation\Repository\ConversationRepositoryInterface;
 use WPAiSuite\AiCore\Conversation\Repository\WpdbConversationRepository;
 use WPAiSuite\AiCore\Prompt\SystemPromptBuilder;
@@ -181,12 +184,21 @@ final class Plugin
         $this->container->set(ConversationController::class, static function (Container $c): ConversationController {
             return new ConversationController($c->get(ConversationRepositoryInterface::class));
         });
+
+        $this->container->set(UsageCostEstimator::class, static function (): UsageCostEstimator {
+            return new UsageCostEstimator();
+        });
+
+        $this->container->set(UsageLogsPage::class, static function (Container $c): UsageLogsPage {
+            return new UsageLogsPage($c->get(ConversationRepositoryInterface::class), $c->get(UsageCostEstimator::class));
+        });
     }
 
     private function bootConversationServices(): void
     {
         $this->container->get(ChatController::class)->register();
         $this->container->get(ConversationController::class)->register();
+        $this->container->get(UsageLogsPage::class)->register();
     }
 
     /**
@@ -271,11 +283,25 @@ final class Plugin
                 $c->get(PdfTextExtractorInterface::class),
             );
         });
+
+        // M10: gleiche Abhaengigkeiten wie DocumentsController, ruft dieselben
+        // KnowledgeSourceInterface-Implementierungen/DocumentIngestionService direkt auf statt
+        // ueber die REST-Route (siehe KnowledgeBasePage-Docblock).
+        $this->container->set(KnowledgeBasePage::class, static function (Container $c): KnowledgeBasePage {
+            return new KnowledgeBasePage(
+                $c->get(DocumentRepositoryInterface::class),
+                $c->get(ChunkerInterface::class),
+                $c->get(VectorStoreInterface::class),
+                $c->get(ActiveProviderResolver::class),
+                $c->get(PdfTextExtractorInterface::class),
+            );
+        });
     }
 
     private function bootKnowledgeServices(): void
     {
         $this->container->get(DocumentsController::class)->register();
+        $this->container->get(KnowledgeBasePage::class)->register();
     }
 
     /**
