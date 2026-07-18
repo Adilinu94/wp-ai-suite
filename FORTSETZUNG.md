@@ -6,7 +6,7 @@
 ## Projekt
 
 Enterprise-KI-Plattform als WordPress-Plugin (Platzhaltername "WP AI Suite" / Namespace `WPAiSuite`).
-Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M10
+Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M11
 weitergearbeitet wird.
 
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
@@ -21,9 +21,9 @@ weitergearbeitet wird.
 
 ## Stand
 
-**M0, M1, M2, M3, M4, M5, M6, M7, M8, M9 abgeschlossen und auf `main` gepusht** (Commits:
+**M0, M1, M2, M3, M4, M5, M6, M7, M8, M9, M10 abgeschlossen und auf `main` gepusht** (Commits:
 `77181ed`, `2770198`, `f4f715c`, `19dae1e`, `46cc847`, `902e7ee`, `5d62325`, `be8b38f`, `862d9a4`,
-`7867fde`, siehe `git log`).
+`7867fde`, `16d4b73`, siehe `git log`). **Damit ist Bauplan Abschnitt 15 komplett bis auf M11.**
 
 - **M0** — Plugin-Bootstrap, DB-Migrationen (6 Tabellen), Ordnerstruktur, DSGVO-Uninstall.
 - **M1** — `AiProviderInterface` + DTOs, `OpenAiProvider`/`AnthropicProvider`/`OpenAiCompatibleProvider`
@@ -142,22 +142,51 @@ weitergearbeitet wird.
   durchgaengig vorhanden — auditiert, kein neuer Code noetig. `ApiKeyVault` (M1,
   `sodium_crypto_secretbox`) ebenfalls auditiert: authentifizierte Verschluesselung, korrekte
   Nonce-Behandlung, keine Aenderung noetig.
+- **M10** — System-Prompt-Editor in `ProviderSettingsPage` ergaenzt (`wpais_system_prompt` wurde
+  seit M1 schon gelesen, es fehlte nur das Eingabefeld). `KnowledgeBasePage`: Dokumentliste
+  (Status-Badge, Fehlermeldung bei `failed`), PDF-Upload (`media_handle_upload()` in die
+  Mediathek, dann `PdfSource` wie M6), FAQ/Freitext-Formular (`FaqSource` wie M6) — ruft
+  `DocumentIngestionService` DIREKT auf statt intern die eigene REST-Route zu rufen. "Neu
+  indexieren" bewusst nur fuer `pdf`/`wp_content` (Begruendung: `wpais_documents` speichert nur
+  den Titel, nicht den vollen Inhalt — der liegt gechunkt in `wpais_chunks`, nicht verlustfrei
+  rekonstruierbar; `pdf`/`wp_content` haben dagegen eine externe Quelle, aus der sich der Inhalt
+  jederzeit frisch lesen laesst). `StoredDocument` um `errorMessage`/`updatedAt` erweitert
+  (beide Spalten seit M0 im Schema, bisher ungenutzt), `DocumentRepositoryInterface` um
+  `listAll()`. `UsageLogsPage`: einfache Tabelle + Summe aus `wpais_usage_logs`
+  (`ConversationRepositoryInterface::listUsageLogs()`), Kostenschaetzung in eigene WP-freie
+  `UsageCostEstimator`-Klasse ausgelagert (dieselbe Trennung wie bei `PromptGuard`/`RateLimiter`
+  in M9) — grobe Naeherungspreise, unbekannte Provider bekommen 0,00 $ statt eines erfundenen
+  Werts.
 
-**Nächster Schritt: M10 — Admin-Dashboard**
-- **Settings:** System-Prompt-Editor fehlt noch in der Admin-UI (pruefen, ob `wpais_system_prompt`
-  bereits an anderer Stelle gelesen/geschrieben wird, bevor ein neues Feld gebaut wird) —
-  Provider-Auswahl/API-Keys/Standard-Modell/Sicherheit sind bereits seit M1/M9 in
-  `ProviderSettingsPage` vorhanden
-- **Wissensbasis-UI:** Liste aller `wpais_documents` mit Status (pending/processed/failed,
-  DB-Spalte existiert seit M0), Upload fuer PDF (baut auf M6s `PdfSource`/`attachment_ids` auf),
-  manuelle FAQ-Eintraege (baut auf M6s `FaqSource` auf), "Neu indexieren"-Button pro Dokument
-  (ruft vermutlich denselben `POST /wpais/v1/documents`-Endpunkt erneut auf) — M6 hat bewusst nur
-  die REST-Mechanik gebaut, keine visuelle Verwaltung, genau das ist jetzt M10s Job
-- **Logs:** einfache Tabelle aus `wpais_usage_logs` (Tokens, Provider, Zeitpunkt), Kostenschaetzung
-  als simple Multiplikation (kein Abrechnungssystem, BYOK)
-- Definition of Done: Bauplan Abschnitt 15, Zeile M10
+**Nächster Schritt: M11 — Beta-Release**
+**Anders als M6–M10: hier geht es nicht mehr um neuen Feature-Code, sondern um Verifikation +
+Packaging** — der naechste Chat sollte das explizit wissen, bevor er lospusht:
+- **Tests aus Abschnitt 14 grün:** `composer install && vendor/bin/pest` MUSS lokal auf
+  `solar.local` laufen (in dieser Sandbox nie moeglich gewesen, siehe "Bekannte
+  Einschraenkungen" — packagist.org ist im Sandbox-Netzwerk blockiert). Alle 176 Tests liefen
+  bisher nur ueber den Wegwerf-Shim.
+- **Strauss-Vendor-Prefixing:** noch NIRGENDS angefasst (Bauplan Abschnitt 9) — braucht ebenfalls
+  `composer require --dev brianhenryie/strauss` + einen Build-Schritt, geht in dieser Sandbox
+  aus demselben Grund nicht.
+- **Staging-Verprobung auf `gfr-industriemontagen.de`:** braucht eine echte WordPress-Installation
+  mit echtem Elementor/WooCommerce — kann eine Sandbox-Session grundsaetzlich nicht leisten.
+- Realistischste Rolle fuer einen neuen Chat hier: beim DURCHGEHEN der Checkliste helfen (z.B.
+  Strauss-Konfiguration vorbereiten, eine Staging-Test-Checkliste aus allen "Manuell testen"-
+  Abschnitten oben zusammenstellen), nicht das Ausfuehren selbst ersetzen.
+- Definition of Done: Bauplan Abschnitt 15, Zeile M11
 
 ## Manuell testen
+
+**M10 (Admin-Dashboard):** Alles WP-admin-UI, kein REST-Test moeglich.
+- **System-Prompt:** Unter "Einstellungen" Text eingeben, speichern, dann eine Chat-Nachricht
+  schicken — der Prompt sollte das Modellverhalten sichtbar beeinflussen.
+- **Wissensbasis:** Unter "Wissensbasis" eine PDF hochladen (sollte in der Mediathek UND in der
+  Dokumentliste mit Status `processed` auftauchen), einen FAQ-Eintrag hinzufuegen (Ref z.B.
+  "test-1"), dann denselben Ref nochmal mit geaendertem Text einreichen — sollte den Eintrag
+  aktualisieren (Version hochzaehlen), nicht duplizieren. "Neu indexieren" bei einer `pdf`-Zeile
+  klicken — sollte ohne Fehler durchlaufen; bei einer `faq`-Zeile sollte kein Button erscheinen.
+- **Logs:** Nach ein paar Chat-Nachrichten unter "Logs" pruefen, ob Zeilen mit Provider/Modell/
+  Tokens auftauchen und die geschaetzte Gesamtsumme oben plausibel wirkt.
 
 **M9 (Security-Härtung):**
 - **Rate-Limiting:** Standardwert 20 Nachrichten/600 Sekunden — im Admin unter "Sicherheit" auf
@@ -315,18 +344,20 @@ Standard-Modell hinterlegt haben, sonst liefert `/chat` HTTP 503 mit einer klare
   `vendor/bin/pest` sind hier nicht ausführbar — betrifft ab M6 zusaetzlich `smalot/pdfparser`
   (composer.json-Eintrag ist ungetestet gegen die echte Bibliothek; `SmalotPdfTextExtractor` ist
   deshalb bewusst NICHT Teil der Unit-Test-Suite, siehe dortiger Docblock).
-- Alle M1–M9-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
+- Alle M1–M10-Tests (Pest-Syntax, `tests/Unit/`) wurden stattdessen über einen selbstgeschriebenen
   Wegwerf-Shim laufen lassen (kein Teil des Repos), der `test()`/`expect()`/`beforeEach()` minimal
-  nachbildet und die echten Testdateien unveraendert einliest — 172/172 gruen (141 aus M1-M8 +
-  31 neue aus M9: RateLimiter, PromptGuard, RetentionCleanup). Der Shim wurde fuer M9 um
-  Pest-Dataset-Unterstuetzung (`->with()`) erweitert, gebraucht fuer `PromptGuardTest`s
-  20 Testfaelle. **Bitte trotzdem einmal lokal `composer install && vendor/bin/pest` laufen
-  lassen**, um mit dem echten Test-Runner gegenzuchecken — das ist der einzige Weg, wie
-  `SmalotPdfTextExtractor` gegen die echte `smalot/pdfparser`-Klasse ueberhaupt geprüft wird; ein
-  kurzer manueller Test mit einer echten PDF-Datei (siehe "Manuell testen" oben) waere zusaetzlich
-  sinnvoll, bevor M6 als wirklich fertig gilt. Fuer M7 zusaetzlich sinnvoll: der M7-Abschnitt unter
-  "Manuell testen" oben (echter Provider, echter Tool-Aufruf) — das Tool-Loop-Verhalten selbst ist
-  gut durch Unit-Tests abgesichert, aber noch nie gegen eine echte OpenAI/Anthropic-Antwort gelaufen.
+  nachbildet und die echten Testdateien unveraendert einliest — 176/176 gruen (172 aus M1-M9 +
+  4 neue aus M10, `UsageCostEstimatorTest`). Der Shim wurde fuer M9 um Pest-Dataset-Unterstuetzung
+  (`->with()`) erweitert, gebraucht fuer `PromptGuardTest`s 20 Testfaelle. **Bitte trotzdem einmal
+  lokal `composer install && vendor/bin/pest` laufen lassen** — das ist DER zentrale offene Punkt
+  vor M11 (siehe dortiger Abschnitt unter "Stand"), nicht nur eine Randnotiz mehr. Bisher lief noch
+  KEIN einziger Test in dieser Serie gegen den echten Pest-Runner.
+- **Neu seit M10:** `KnowledgeBasePage`/`UsageLogsPage` sind wie `ChatController`/
+  `DocumentsController` WP-admin-gekoppelt (`add_submenu_page`, `current_user_can`,
+  `media_handle_upload` etc.) und deshalb hier nicht unit-, nur integrationstestbar — noch nie in
+  einem echten `wp-admin` gerendert oder angeklickt. Der PDF-Upload-Pfad
+  (`media_handle_upload()`) ist davon am ehesten betroffen, da er WordPress-Kernfunktionen nutzt,
+  die in keinem bisherigen Meilenstein gebraucht wurden.
 - **Neu seit M9:** WP-Cron (`wp_schedule_event`/`wp_next_scheduled`), Transients
   (`get_transient`/`set_transient`) und tatsaechliches HTTP-Rate-Limiting-Verhalten unter echtem
   WordPress sind in dieser Sandbox nicht ausfuehrbar/pruefbar — `RateLimiter`/`RetentionCleanup`
@@ -385,7 +416,7 @@ das ganze Konto treffen wie der aktuelle.
 2. Erster interner Testkunde für M11 (Vorschlag: gfr-industriemontagen.de)
 3. Lizenzserver-Wahl für Phase 2 (Freemius vs. EDD Software Licensing vs. Eigenbau)
 
-## Weitere offene Punkte aus M1–M9 (nicht blockierend, aber im Hinterkopf behalten)
+## Weitere offene Punkte aus M1–M10 (nicht blockierend, aber im Hinterkopf behalten)
 
 1. `AnthropicProvider::embed()` wirft `UnsupportedCapabilityException` (Anthropic hat keine
    Embeddings-API) — für M4 (Knowledge Engine) muss ein embeddings-fähiger Provider konfiguriert
@@ -494,9 +525,21 @@ das ganze Konto treffen wie der aktuelle.
 26. Der Text in `PrivacyNoticeAdminNotice` (M9) ist ein generischer Platzhaltertext fuer die
     eigene Datenschutzerklaerung — muss pro Kunden-Website inhaltlich geprueft/angepasst werden,
     ersetzt ausdruecklich keine Rechtsberatung (steht auch so im Notice-Text selbst).
+27. `KnowledgeBasePage`s Dokumentliste (M10) hat keine Pagination (hartes Limit 200,
+    `listAll()`) und kein Such-/Filterfeld — fuer Phase 1 in Ordnung, waere aber bei einer
+    wachsenden Wissensbasis (viele PDFs/FAQ-Eintraege) ein Kandidat fuer eine spaetere
+    Verbesserung, sobald 200 Dokumente tatsaechlich erreicht werden.
+28. Der PDF-Dateityp wird beim Upload (M10, `KnowledgeBasePage`) nur clientseitig ueber
+    `accept="application/pdf"` nahegelegt, serverseitig nicht zusaetzlich erzwungen — eine
+    andere Datei wuerde `media_handle_upload()` durchlaufen und erst bei der Textextraktion
+    (`SmalotPdfTextExtractor`) als `failed`-Dokument mit Fehlermeldung auffallen, kein Absturz,
+    aber eine spaete statt fruehe Fehlermeldung.
 
 ## Wie im neuen Chat weitermachen
 
 `BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder verlinken, dann reicht:
-"Fahre mit M10 (Admin-Dashboard) fort" — der neue Chat hat damit den vollen Kontext, ohne dass
-die Grundsatzentscheidungen erneut diskutiert werden müssen.
+"Fahre mit M11 (Beta-Release) fort" — **mit dem Hinweis, dass M11 anders ist als M6–M10** (siehe
+"Stand" oben): kein neuer Feature-Code, sondern `composer install && vendor/bin/pest` lokal
+laufen lassen, Strauss-Vendor-Prefixing einrichten, und auf `gfr-industriemontagen.de` als
+Staging verproben — Dinge, die eine Sandbox-Session nicht selbst ausfuehren kann. Der neue Chat
+sollte das explizit wissen, bevor er einfach "mach weiter" wie bei M6–M10 interpretiert.
