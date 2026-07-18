@@ -24,6 +24,8 @@ weitergearbeitet wird.
 **M0, M1, M2, M3, M4, M5, M6, M7, M8, M9, M10 abgeschlossen und auf `main` gepusht** (Commits:
 `77181ed`, `2770198`, `f4f715c`, `19dae1e`, `46cc847`, `902e7ee`, `5d62325`, `be8b38f`, `862d9a4`,
 `7867fde`, `16d4b73`, siehe `git log`). **Damit ist Bauplan Abschnitt 15 komplett bis auf M11.**
+M11-Vorbereitung (Strauss-Konfiguration + `STAGING-CHECKLIST.md`, Commit `544a298`) ist bereits
+erledigt, die eigentliche Ausfuehrung von M11 noch nicht (siehe dort).
 
 - **M0** — Plugin-Bootstrap, DB-Migrationen (6 Tabellen), Ordnerstruktur, DSGVO-Uninstall.
 - **M1** — `AiProviderInterface` + DTOs, `OpenAiProvider`/`AnthropicProvider`/`OpenAiCompatibleProvider`
@@ -160,19 +162,26 @@ weitergearbeitet wird.
 
 **Nächster Schritt: M11 — Beta-Release**
 **Anders als M6–M10: hier geht es nicht mehr um neuen Feature-Code, sondern um Verifikation +
-Packaging** — der naechste Chat sollte das explizit wissen, bevor er lospusht:
+Packaging** — der naechste Chat sollte das explizit wissen, bevor er lospusht. Vorbereitung
+(Commit `544a298`) ist bereits erledigt, das AUSFUEHREN selbst nicht:
 - **Tests aus Abschnitt 14 grün:** `composer install && vendor/bin/pest` MUSS lokal auf
   `solar.local` laufen (in dieser Sandbox nie moeglich gewesen, siehe "Bekannte
   Einschraenkungen" — packagist.org ist im Sandbox-Netzwerk blockiert). Alle 176 Tests liefen
-  bisher nur ueber den Wegwerf-Shim.
-- **Strauss-Vendor-Prefixing:** noch NIRGENDS angefasst (Bauplan Abschnitt 9) — braucht ebenfalls
-  `composer require --dev brianhenryie/strauss` + einen Build-Schritt, geht in dieser Sandbox
-  aus demselben Grund nicht.
+  bisher nur ueber den Wegwerf-Shim. **Das ist der wichtigste einzelne Schritt vor M11.**
+- **Strauss-Vendor-Prefixing:** Konfiguration steht bereits in `composer.json`
+  (`scripts.prefix-namespaces` + `extra.strauss`, `target_directory: "vendor-scoped"` exakt wie
+  in Abschnitt 2/9 spezifiziert, `namespace_prefix: "WPAiSuite\\Vendor\\"`,
+  `update_call_sites: true` — schreibt `SmalotPdfTextExtractor.php`s `\Smalot\PdfParser\`-Referenz
+  automatisch um). Noch nie tatsaechlich AUSGEFUEHRT (braucht Packagist, geht hier nicht) — das
+  ist der naechste Schritt: `composer install` sollte das automatisch mit anstossen
+  (`post-install-cmd`).
 - **Staging-Verprobung auf `gfr-industriemontagen.de`:** braucht eine echte WordPress-Installation
   mit echtem Elementor/WooCommerce — kann eine Sandbox-Session grundsaetzlich nicht leisten.
-- Realistischste Rolle fuer einen neuen Chat hier: beim DURCHGEHEN der Checkliste helfen (z.B.
-  Strauss-Konfiguration vorbereiten, eine Staging-Test-Checkliste aus allen "Manuell testen"-
-  Abschnitten oben zusammenstellen), nicht das Ausfuehren selbst ersetzen.
+  `STAGING-CHECKLIST.md` (neu, Repo-Root) fasst dafuer alle "Manuell testen"-Abschnitte aus
+  M2–M10 zu einer abhakbaren Liste zusammen, mit Rueckverweisen statt Befehlsduplizierung.
+- Realistischste Rolle fuer einen neuen Chat hier: beim tatsaechlichen DURCHGEHEN von
+  `STAGING-CHECKLIST.md` helfen (Ergebnisse interpretieren, bei Fehlern debuggen), nicht das
+  Ausfuehren selbst ersetzen — die Vorbereitung ist jetzt getan.
 - Definition of Done: Bauplan Abschnitt 15, Zeile M11
 
 ## Manuell testen
