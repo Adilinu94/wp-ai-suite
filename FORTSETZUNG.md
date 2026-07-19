@@ -9,6 +9,56 @@ Enterprise-KI-Plattform als WordPress-Plugin (Platzhaltername "WP AI Suite" / Na
 Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M11
 weitergearbeitet wird.
 
+## Laufender Vorgang — WICHTIGER als "Stand" unten, zuerst lesen
+
+Gerade begonnen, noch NICHTS Konsequentes ausgefuehrt: WP AI Suite ueber die **Novamira-MCP-
+Verbindung** (Connector `novamira-test4-nick-webde`, Zielseite `test4.nick-webdesign.de`) und
+**Desktop Commander** (lokaler Windows-Rechner) probeweise deployen/testen — als
+risikoaermerer Zwischenschritt VOR `gfr-industriemontagen.de` (dem eigentlichen Staging-Ziel aus
+M11).
+
+**Fuer den neuen Chat wichtig:** Desktop Commander UND `novamira-test4-nick-webde` sind
+claude.ai-Session-Connectors, kein Datei-Upload — im neuen Chat pruefen, ob beide im Tool-Vorrat
+verfuegbar sind, bevor angenommen wird, sie seien automatisch da.
+
+Bisher passiert:
+1. Beide per `tool_search` geladen.
+2. Desktop Commander: erste Versuche (`get_config`, `list_directory`) scheiterten mit
+   "Tool not found". Laut Adi inzwischen behoben ("müsste jetzt funktionieren") — im neuen Chat
+   ZUERST neu verifizieren (z.B. `get_config`), bevor darauf aufgebaut wird.
+3. Novamira test4 funktioniert (`mcp-adapter-discover-abilities`): `test4.nick-webdesign.de`,
+   WordPress 6.9.4, PHP 8.4.23, Elementor v4.2.0-beta1, WooCommerce 10.8.1, Novamira/Novamira
+   Pro/AdrianV2 aktiv. **WP AI Suite ist auf dieser Seite NICHT installiert.**
+4. Passende Ability identifiziert: `novamira-adrianv2/plugin-deploy` ("Plugin Deploy (GitHub
+   ZIP)") — laedt ein Plugin als ZIP von GitHub und extrahiert es. Parameter: `dry_run` (bool,
+   Default `true` — zeigt nur aktuelle Version + letzte Aenderungen, laedt NICHTS herunter),
+   `webhook_secret` (string, zur Autorisierung — Wert noch nicht bekannt/besorgt). Nur die
+   Ability-Info abgerufen, noch NICHT aufgerufen, auch nicht im Dry-Run.
+
+**Naechste Schritte fuer den neuen Chat, in dieser Reihenfolge:**
+1. Desktop Commander verifizieren (z.B. `get_config`), bevor irgendwas darauf aufgebaut wird.
+2. `novamira-adrianv2/plugin-deploy` ERST mit `dry_run:true` aufrufen (aendert nichts) und
+   pruefen, ob die zurueckgemeldete Version/Aenderungen ueberhaupt zu `Adilinu94/wp-ai-suite`
+   passen — unklar, ob diese Ability generisch ist oder fest auf ein anderes Repo/Plugin von Adi
+   konfiguriert ist.
+3. Nur falls Punkt 2 das richtige Repo bestaetigt UND Adi zustimmt: `dry_run:false` (braucht
+   vermutlich `webhook_secret` — bei Adi erfragen, falls die Ability das verlangt und der Wert
+   nicht anderweitig verfuegbar ist).
+4. **Unabhaengig vom Deploy-Mechanismus wichtig:** `vendor/` ist nicht Teil des Git-Repos
+   (`composer.json` listet `smalot/pdfparser`, siehe M6) — ein reiner GitHub-ZIP-Download OHNE
+   anschliessendes `composer install` wuerde beim ersten PDF-Upload mit einem
+   Class-not-found-Fehler fuer `\Smalot\PdfParser\Parser` fehlschlagen. Vor dem Testen der
+   PDF-Ingestion pruefen, ob `composer install` serverseitig moeglich ist (WP-CLI-Ability oder
+   Desktop Commander, falls Letzteres tatsaechlich denselben Server erreicht — unklar, ob
+   Desktop Commander ueberhaupt Netzwerkzugriff auf `test4.nick-webdesign.de` hat oder nur den
+   lokalen Windows-Rechner sieht).
+5. Nach erfolgreichem Deploy + Aktivierung: `STAGING-CHECKLIST.md` durchgehen (deckt sich mit
+   dem, was ohnehin fuer `gfr-industriemontagen.de` vorgesehen war — sollte identisch auf test4
+   funktionieren).
+
+Der Rest dieses Dokuments (unten) beschreibt den GESAMTEN Projektstand (M0–M10 fertig, M11
+vorbereitet) und ist davon unberuehrt weiterhin gueltig — nur der Abschnitt hier oben ist neu.
+
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 
 | Frage | Entscheidung |
@@ -546,9 +596,16 @@ das ganze Konto treffen wie der aktuelle.
 
 ## Wie im neuen Chat weitermachen
 
-`BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder verlinken, dann reicht:
-"Fahre mit M11 (Beta-Release) fort" — **mit dem Hinweis, dass M11 anders ist als M6–M10** (siehe
-"Stand" oben): kein neuer Feature-Code, sondern `composer install && vendor/bin/pest` lokal
-laufen lassen, Strauss-Vendor-Prefixing einrichten, und auf `gfr-industriemontagen.de` als
-Staging verproben — Dinge, die eine Sandbox-Session nicht selbst ausfuehren kann. Der neue Chat
-sollte das explizit wissen, bevor er einfach "mach weiter" wie bei M6–M10 interpretiert.
+**Fuer den laufenden Vorgang (siehe ganz oben):** sicherstellen, dass Desktop Commander UND
+`novamira-test4-nick-webde` im neuen Chat als Connector verbunden sind, `BAUPLAN-PHASE1-MVP.md` +
+dieses Dokument hochladen, dann reicht: "Mach weiter mit dem Novamira-Deployment-Test auf test4"
+— der Abschnitt ganz oben traegt den kompletten Kontext dafuer.
+
+**Falls der laufende Vorgang stattdessen abgebrochen/erledigt ist** und regulaer an M11
+weitergearbeitet werden soll: `BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder
+verlinken, dann reicht "Fahre mit M11 (Beta-Release) fort" — **mit dem Hinweis, dass M11 anders
+ist als M6–M10** (siehe "Stand" oben): kein neuer Feature-Code, sondern
+`composer install && vendor/bin/pest` lokal laufen lassen, Strauss-Vendor-Prefixing einrichten,
+und auf `gfr-industriemontagen.de` als Staging verproben — Dinge, die eine Sandbox-Session nicht
+selbst ausfuehren kann. Der neue Chat sollte das explizit wissen, bevor er einfach "mach weiter"
+wie bei M6–M10 interpretiert.
