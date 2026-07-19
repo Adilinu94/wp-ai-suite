@@ -28,7 +28,16 @@ jobs:
           coverage: none
 
       - name: Validate composer.json
-        run: composer validate --strict --no-check-lock
+        run: composer validate --strict
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.composer/cache
+            vendor
+          key: composer-${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-interaction
