@@ -1,0 +1,57 @@
+{
+    "name": "adilinu94/wp-ai-suite",
+    "description": "WP AI Suite - Enterprise WordPress AI Plugin (Phase 1 MVP)",
+    "type": "wordpress-plugin",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.1",
+        "ext-json": "*",
+        "ext-sodium": "*",
+        "ext-curl": "*",
+        "smalot/pdfparser": "^2.12"
+    },
+    "require-dev": {
+        "pestphp/pest": "^2.0",
+        "yoast/phpunit-polyfills": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "WPAiSuite\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "WPAiSuite\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "scripts": {
+        "prefix-namespaces": [
+            "sh -c 'test -f ./bin/strauss.phar || curl -o bin/strauss.phar -L -C - https://github.com/BrianHenryIE/strauss/releases/latest/download/strauss.phar'",
+            "@php bin/strauss.phar",
+            "@composer dump-autoload"
+        ],
+        "post-install-cmd": [
+            "@prefix-namespaces"
+        ],
+        "post-update-cmd": [
+            "@prefix-namespaces"
+        ],
+        "post-autoload-dump": [
+            "@php bin/strauss.phar include-autoloader"
+        ]
+    },
+    "extra": {
+        "strauss": {
+            "target_directory": "vendor-scoped",
+            "namespace_prefix": "WPAiSuite\\Vendor\\",
+            "classmap_prefix": "WPAiSuite_Vendor_",
+            "constant_prefix": "WPAIS_VENDOR_",
+            "update_call_sites": true
+        }
+    }
+}

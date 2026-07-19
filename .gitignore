@@ -1,0 +1,10 @@
+/vendor/
+/vendor-scoped/
+/node_modules/
+/bin/strauss.phar
+.DS_Store
+*.log
+.env
+.phpunit.result.cache
+/.idea/
+/.vscode/
