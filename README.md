@@ -14,11 +14,11 @@ ist austauschbare Adapter-Implementierung eines Interfaces aus dem jeweiligen `C
 - [x] **M3** — Frontend-Chat-Widget
 - [x] M4 — Knowledge Engine (Chunking, Embeddings, Vector-Store)
 - [x] M5 — RAG-Integration
-- [ ] M6 — PDF/FAQ-Ingestion
-- [ ] M7 — Tool Engine (Wissenssuche, WooCommerce-Produktsuche)
-- [ ] M8 — Elementor-Widget
-- [ ] M9 — Security-Haertung
-- [ ] M10 — Admin-Dashboard
+- [x] **M6** — PDF/FAQ-Ingestion
+- [x] **M7** — Tool Engine (Wissenssuche, WooCommerce-Produktsuche)
+- [x] **M8** — Elementor-Widget
+- [x] **M9** — Security-Haertung
+- [x] **M10** — Admin-Dashboard
 - [ ] M11 — Beta-Release
 
 Reservierte Module fuer Phase 2/3 (Flow, Agents, Mcp, Channels, Voice, Vision,
