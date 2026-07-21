@@ -61,8 +61,12 @@ final class ProviderFactory
             return new AnthropicProvider($apiKey, $transport);
         }
 
-        $preset = self::COMPATIBLE_PRESETS[$providerKey] ?? null;
-        $baseUrl = $customConfig['base_url'] ?? $preset['base_url'] ?? null;
+        $preset = self::COMPATIBLE_PRESETS[$providerKey]
+            ?? $this->presetFromLabel((string) ($customConfig['label'] ?? ''))
+            ?? null;
+
+        $baseUrl = $this->nonEmptyString($customConfig['base_url'] ?? null)
+            ?? ($preset['base_url'] ?? null);
 
         if ($baseUrl === null) {
             throw new \InvalidArgumentException(
@@ -74,9 +78,13 @@ final class ProviderFactory
             apiKey: $apiKey,
             transport: $transport,
             providerKey: $providerKey,
-            label: $customConfig['label'] ?? $preset['label'] ?? ucfirst($providerKey),
+            label: $this->nonEmptyString($customConfig['label'] ?? null)
+                ?? $preset['label']
+                ?? ucfirst($providerKey),
             configuredBaseUrl: $baseUrl,
-            configuredSupportsTools: $customConfig['supports_tools'] ?? $preset['supports_tools'] ?? true,
+            configuredSupportsTools: $customConfig['supports_tools']
+                ?? $preset['supports_tools']
+                ?? true,
         );
     }
 
@@ -84,5 +92,39 @@ final class ProviderFactory
     public function knownCompatiblePresets(): array
     {
         return array_map(static fn (array $p): string => $p['label'], self::COMPATIBLE_PRESETS);
+    }
+
+    /**
+     * Admin UI stores OpenAI-compatible providers under the single key "custom" and may leave
+     * base_url empty when the label matches a known preset (DeepSeek / Mistral).
+     *
+     * @return array{label:string, base_url:string, supports_tools:bool}|null
+     */
+    private function presetFromLabel(string $label): ?array
+    {
+        $normalized = strtolower(trim($label));
+        if ($normalized === '') {
+            return null;
+        }
+
+        foreach (self::COMPATIBLE_PRESETS as $preset) {
+            if (strtolower($preset['label']) === $normalized) {
+                return $preset;
+            }
+        }
+
+        // Also accept the preset key itself as a label (e.g. "deepseek").
+        return self::COMPATIBLE_PRESETS[$normalized] ?? null;
+    }
+
+    private function nonEmptyString(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
     }
 }

@@ -54,6 +54,19 @@ test('builds a fully custom OpenAiCompatibleProvider when base_url is supplied',
         ->and($provider->supportsTools())->toBeFalse();
 });
 
+test('custom provider with DeepSeek label and empty base_url uses the DeepSeek preset URL', function (): void {
+    $this->apiKeys->store('custom', 'sk-deepseek-test');
+
+    $provider = $this->factory->make('custom', [
+        'label' => 'DeepSeek',
+        'base_url' => '',
+    ]);
+
+    expect($provider)->toBeInstanceOf(OpenAiCompatibleProvider::class)
+        ->and($provider->getKey())->toBe('custom')
+        ->and($provider->getLabel())->toBe('DeepSeek');
+});
+
 test('throws when a custom provider has neither a preset nor an explicit base_url', function (): void {
     $this->apiKeys->store('unknown-provider', 'sk-x');
 

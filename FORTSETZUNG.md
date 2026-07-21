@@ -9,55 +9,35 @@ Enterprise-KI-Plattform als WordPress-Plugin (Platzhaltername "WP AI Suite" / Na
 Vollständige Architektur: `BAUPLAN-PHASE1-MVP.md` im Repo-Root — **zuerst lesen**, bevor an M11
 weitergearbeitet wird.
 
-## Laufender Vorgang — WICHTIGER als "Stand" unten, zuerst lesen
+## Laufender Vorgang — Stand 2026-07-21 (novamira-hcm-local / hcm.local)
 
-Gerade begonnen, noch NICHTS Konsequentes ausgefuehrt: WP AI Suite ueber die **Novamira-MCP-
-Verbindung** (Connector `novamira-test4-nick-webde`, Zielseite `test4.nick-webdesign.de`) und
-**Desktop Commander** (lokaler Windows-Rechner) probeweise deployen/testen — als
-risikoaermerer Zwischenschritt VOR `gfr-industriemontagen.de` (dem eigentlichen Staging-Ziel aus
-M11).
+**Zielumgebung:** Local WP `http://hcm.local` via MCP `novamira-hcm-local` (nicht mehr test4).
+Plugin-Pfad: `wp-content/plugins/wp-ai-suite-main/`. Elementor aktiv, WooCommerce nicht.
 
-**Fuer den neuen Chat wichtig:** Desktop Commander UND `novamira-test4-nick-webde` sind
-claude.ai-Session-Connectors, kein Datei-Upload — im neuen Chat pruefen, ob beide im Tool-Vorrat
-verfuegbar sind, bevor angenommen wird, sie seien automatisch da.
+### Erledigt in diesem Stand
+1. **Strauss / vendor-scoped (M6/M11-Bug):** `php bin/strauss.phar` laeuft; Call-Sites +
+   Bootstrap-Autoload-Bridge fuer PSR-0-Pfad-Mismatch von smalot; Fallback unscoped→scoped in
+   `SmalotPdfTextExtractor`. Deploy auf HCM inkl. `vendor-scoped/`.
+2. **DB-Tabellen:** fehlten nach reinem Ordner-Drop-in; `Migrator::createTables()` + neuer
+   Boot-Fallback `Plugin::ensureDatabase()` (dbDelta wenn `wpais_db_version` != `WPAIS_VERSION`).
+3. **Provider-Factory:** Label „DeepSeek“/„Mistral“ unter Key `custom` + leere Base-URL nutzt
+   Preset-URL (entspricht der Admin-UI-Beschreibung).
+4. **RateLimiter-Doc:** Fenster-Semantik korrekt dokumentiert (TTL-erneuerter Zaehler, kein
+   klassisches Fixed Window) — kein Security-Issue.
+5. **Pest Unit:** `esc_attr`-Stub in `tests/Pest.php`; `phpunit.xml` trennt Unit vs Integration;
+   **179 Unit-Tests gruen**.
+6. **HCM-Config (ohne Secret):** `custom` / DeepSeek / `https://api.deepseek.com/v1` /
+   Modell `deepseek-chat` gesetzt. Encryption-Key in wp-config vorhanden.
 
-Bisher passiert:
-1. Beide per `tool_search` geladen.
-2. Desktop Commander: erste Versuche (`get_config`, `list_directory`) scheiterten mit
-   "Tool not found". Laut Adi inzwischen behoben ("müsste jetzt funktionieren") — im neuen Chat
-   ZUERST neu verifizieren (z.B. `get_config`), bevor darauf aufgebaut wird.
-3. Novamira test4 funktioniert (`mcp-adapter-discover-abilities`): `test4.nick-webdesign.de`,
-   WordPress 6.9.4, PHP 8.4.23, Elementor v4.2.0-beta1, WooCommerce 10.8.1, Novamira/Novamira
-   Pro/AdrianV2 aktiv. **WP AI Suite ist auf dieser Seite NICHT installiert.**
-4. Passende Ability identifiziert: `novamira-adrianv2/plugin-deploy` ("Plugin Deploy (GitHub
-   ZIP)") — laedt ein Plugin als ZIP von GitHub und extrahiert es. Parameter: `dry_run` (bool,
-   Default `true` — zeigt nur aktuelle Version + letzte Aenderungen, laedt NICHTS herunter),
-   `webhook_secret` (string, zur Autorisierung — Wert noch nicht bekannt/besorgt). Nur die
-   Ability-Info abgerufen, noch NICHT aufgerufen, auch nicht im Dry-Run.
+### Blocker fuer Live-Chat (M2/M5/M7)
+**Kein API-Key in `wpais_api_keys`.** Vermutlich ging der fruehere Admin-Save verloren, weil die
+Tabelle beim Speichern noch nicht existierte. Einmal unter WP AI Suite → Einstellungen den
+DeepSeek-Key neu speichern — danach M2/M5/M7 live testbar.
 
-**Naechste Schritte fuer den neuen Chat, in dieser Reihenfolge:**
-1. Desktop Commander verifizieren (z.B. `get_config`), bevor irgendwas darauf aufgebaut wird.
-2. `novamira-adrianv2/plugin-deploy` ERST mit `dry_run:true` aufrufen (aendert nichts) und
-   pruefen, ob die zurueckgemeldete Version/Aenderungen ueberhaupt zu `Adilinu94/wp-ai-suite`
-   passen — unklar, ob diese Ability generisch ist oder fest auf ein anderes Repo/Plugin von Adi
-   konfiguriert ist.
-3. Nur falls Punkt 2 das richtige Repo bestaetigt UND Adi zustimmt: `dry_run:false` (braucht
-   vermutlich `webhook_secret` — bei Adi erfragen, falls die Ability das verlangt und der Wert
-   nicht anderweitig verfuegbar ist).
-4. **Unabhaengig vom Deploy-Mechanismus wichtig:** `vendor/` ist nicht Teil des Git-Repos
-   (`composer.json` listet `smalot/pdfparser`, siehe M6) — ein reiner GitHub-ZIP-Download OHNE
-   anschliessendes `composer install` wuerde beim ersten PDF-Upload mit einem
-   Class-not-found-Fehler fuer `\Smalot\PdfParser\Parser` fehlschlagen. Vor dem Testen der
-   PDF-Ingestion pruefen, ob `composer install` serverseitig moeglich ist (WP-CLI-Ability oder
-   Desktop Commander, falls Letzteres tatsaechlich denselben Server erreicht — unklar, ob
-   Desktop Commander ueberhaupt Netzwerkzugriff auf `test4.nick-webdesign.de` hat oder nur den
-   lokalen Windows-Rechner sieht).
-5. Nach erfolgreichem Deploy + Aktivierung: `STAGING-CHECKLIST.md` durchgehen (deckt sich mit
-   dem, was ohnehin fuer `gfr-industriemontagen.de` vorgesehen war — sollte identisch auf test4
-   funktionieren).
-
-Der Rest dieses Dokuments (unten) beschreibt den GESAMTEN Projektstand (M0–M10 fertig, M11
-vorbereitet) und ist davon unberuehrt weiterhin gueltig — nur der Abschnitt hier oben ist neu.
+### Noch offen (M11)
+- Live-Chat + RAG + Tools sobald Key da
+- Elementor-Widget manuell im Browser
+- Integration-Tests brauchen WP-Testsuite (siehe `tests/Integration/README.md`)
 
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 

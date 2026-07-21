@@ -6,17 +6,20 @@ namespace WPAiSuite\Security;
 
 /**
  * Bauplan Abschnitt 9: "Rate-Limiting: Transient-basiert pro Session-Token/IP (z.B. 20
- * Nachrichten/10 Minuten)". Festes Zeitfenster (kein Sliding Window, kein Token-Bucket) — bewusst
- * die einfachste Variante, die mit einem einzigen Transient pro Schluessel auskommt (Regel 2,
- * "kein Overengineering"): ein Zaehler pro Schluessel, der beim ersten Aufruf in einem neuen
- * Fenster auf 1 zurueckfaellt (TTL des Transients selbst erledigt das "Fenster verstrichen").
+ * Nachrichten/10 Minuten)". Bewusst die einfachste Variante mit einem einzigen Transient pro
+ * Schluessel (kein Token-Bucket): Zaehler + TTL.
  *
- * $identifier (der Aufrufer entscheidet, was das ist — Session-Token bevorzugt, IP als Fallback
- * fuer den allerersten Request einer neuen Konversation, siehe ChatController) wird hier NICHT
- * geloggt oder dauerhaft gespeichert, nur als Cache-Schluessel fuer maximal $windowSeconds
- * verwendet — kein Widerspruch zu "IP-Adressen werden nicht gespeichert" (Bauplan Abschnitt 9),
- * das bezieht sich auf dauerhafte Persistenz in wpais_messages, nicht auf einen kurzlebigen
- * Cache-Schluessel.
+ * Fenster-Semantik: Jeder erlaubte attempt() schreibt den Zaehler neu und setzt die Transient-TTL
+ * erneut auf $windowSeconds. Das ist KEIN klassisches Fixed Window ab dem ersten Hit, sondern ein
+ * Counter mit erneuerter Ablaufzeit ab dem jeweils letzten erlaubten Versuch. Sobald das Limit
+ * greift, wird nicht mehr geschrieben — der Transient laeuft dann mit der zuletzt gesetzten TTL
+ * ab und gibt den Schluessel danach wieder frei. Fuer das MVP ausreichend; kein Security-Bug,
+ * nur genauer als "festes Fenster".
+ *
+ * $identifier (Session-Token bevorzugt, IP-Fallback fuer den allerersten Request, siehe
+ * ChatController) wird NICHT geloggt oder dauerhaft gespeichert, nur kurzlebig als Cache-
+ * Schluessel verwendet — kein Widerspruch zu "IP-Adressen werden nicht gespeichert"
+ * (Bauplan Abschnitt 9), das bezieht sich auf dauerhafte Persistenz in wpais_messages.
  */
 final class RateLimiter
 {

@@ -22,3 +22,20 @@ use PHPUnit\Framework\TestCase;
 */
 
 uses(TestCase::class)->in('Unit');
+
+/*
+|--------------------------------------------------------------------------
+| Minimal WordPress stubs for unit tests that touch thin WP helper calls
+|--------------------------------------------------------------------------
+|
+| ChatWidgetRenderer escapes attributes via esc_attr(). That is intentional
+| (XSS-safe output under real WordPress). Unit tests do not bootstrap WP, so
+| provide a tiny compatible stub only when the real function is absent.
+*/
+
+if (!function_exists('esc_attr')) {
+    function esc_attr(string $text): string
+    {
+        return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+}

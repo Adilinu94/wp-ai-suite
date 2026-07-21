@@ -33,6 +33,24 @@ if (file_exists($wpais_autoload)) {
 unset($wpais_autoload);
 
 /**
+ * Strauss rewrites smalot/pdfparser namespaces (PSR-0) into WPAiSuite\Vendor\... but leaves
+ * the physical layout under vendor-scoped/smalot/pdfparser/src/Smalot/.... The generated PSR-0
+ * map then looks for src/WPAiSuite/Vendor/Smalot/... which does not exist. Bridge that gap.
+ */
+spl_autoload_register(static function (string $class): void {
+    $prefix = 'WPAiSuite\\Vendor\\Smalot\\PdfParser\\';
+    if (!str_starts_with($class, $prefix)) {
+        return;
+    }
+
+    $relative = 'Smalot/PdfParser/' . str_replace('\\', '/', substr($class, strlen($prefix)));
+    $file = WPAIS_PLUGIN_DIR . 'vendor-scoped/smalot/pdfparser/src/' . $relative . '.php';
+    if (is_readable($file)) {
+        require_once $file;
+    }
+}, true, true);
+
+/**
  * Aktivierung: legt alle Plugin-Tabellen an (siehe Migrator, DB-Design in
  * BAUPLAN-PHASE1-MVP.md Abschnitt 4). Muss idempotent sein (dbDelta).
  */

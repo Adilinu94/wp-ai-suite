@@ -88,6 +88,10 @@ final class Plugin
             dirname(plugin_basename(WPAIS_PLUGIN_FILE)) . '/languages'
         );
 
+        // Safety net: activation hooks are easy to miss when the plugin folder is copied
+        // into place (or renamed) without a proper activate cycle. dbDelta is idempotent.
+        $this->ensureDatabase();
+
         $this->bootProviderServices();
         $this->bootConversationServices();
         $this->bootFrontendServices();
@@ -99,6 +103,22 @@ final class Plugin
          * Ab M1 registrieren sich hier die jeweiligen Service-Provider.
          */
         do_action('wpais_booted', $this);
+    }
+
+    /**
+     * Creates/updates plugin tables when the stored schema version is missing or behind.
+     * Mirrors the activation hook so a "drop files into plugins/" install still works.
+     */
+    private function ensureDatabase(): void
+    {
+        $installed = (string) get_option('wpais_db_version', '');
+        if ($installed === WPAIS_VERSION) {
+            return;
+        }
+
+        if (class_exists(Database\Migrator::class)) {
+            Database\Migrator::createTables();
+        }
     }
 
     /**

@@ -5,16 +5,10 @@ declare(strict_types=1);
 namespace WPAiSuite\Knowledge\Ingestion;
 
 /**
- * Referenzimplementierung von PdfTextExtractorInterface (M6) ueber smalot/pdfparser (Composer-
- * Dependency, siehe composer.json). Einziger Ort im gesamten Plugin, der \Smalot\PdfParser\*
- * referenziert — genau der Punkt von PdfTextExtractorInterface als Port.
- *
- * NICHT unit-getestet (anders als PdfSource selbst): smalot/pdfparser kann in dieser Sandbox nicht
- * per Composer installiert werden (packagist.org nicht im erlaubten Netzwerk, siehe FORTSETZUNG.md
- * "Bekannte Einschraenkungen"), ein Test gegen die echte Klasse wuerde hier mit einem Class-not-
- * found-Fehler scheitern. Nach `composer install` auf solar.local ist die Klasse verfuegbar; ein
- * manueller Smoke-Test mit einer echten PDF-Datei ist der praktikablere Weg, siehe FORTSETZUNG.md
- * "Manuell testen" fuer M6.
+ * Reference implementation of PdfTextExtractorInterface (M6) via smalot/pdfparser.
+ * Prefer the Strauss-scoped class (WPAiSuite\Vendor\...) so the plugin never collides with
+ * another copy of smalot on the same site; fall back to the unscoped class when vendor-scoped
+ * was not generated yet (local composer without prefix step).
  */
 final class SmalotPdfTextExtractor implements PdfTextExtractorInterface
 {
@@ -29,17 +23,16 @@ final class SmalotPdfTextExtractor implements PdfTextExtractorInterface
         }
 
         try {
-            $parser = new \Smalot\PdfParser\Parser();
+            $parserClass = $this->resolveParserClass();
+            $parser = new $parserClass();
             $document = $parser->parseFile($filePath);
 
             return $document->getText();
         } catch (PdfExtractionException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            // smalot/pdfparser wirft bei kaputten/verschluesselten PDFs diverse eigene Exception-
-            // Typen (z.B. \Exception mit wechselnden Nachrichten je nach Fehlerart) — hier bewusst
-            // breit gefangen und einheitlich in PdfExtractionException uebersetzt, damit PdfSource
-            // nur EINEN Exception-Typ behandeln muss (siehe PdfExtractionException-Docblock).
+            // smalot/pdfparser throws various exception types for corrupt/encrypted PDFs —
+            // normalise to PdfExtractionException so PdfSource only handles one type.
             throw new PdfExtractionException(
                 sprintf(
                     /* translators: 1: file path, 2: underlying error message from smalot/pdfparser */
@@ -50,5 +43,23 @@ final class SmalotPdfTextExtractor implements PdfTextExtractorInterface
                 previous: $e,
             );
         }
+    }
+
+    /**
+     * @return class-string
+     */
+    private function resolveParserClass(): string
+    {
+        if (class_exists(\WPAiSuite\Vendor\Smalot\PdfParser\Parser::class)) {
+            return \WPAiSuite\Vendor\Smalot\PdfParser\Parser::class;
+        }
+
+        if (class_exists(\Smalot\PdfParser\Parser::class)) {
+            return \Smalot\PdfParser\Parser::class;
+        }
+
+        throw new PdfExtractionException(
+            __('PDF-Parser nicht verfuegbar — composer install / prefix-namespaces ausfuehren.', 'wp-ai-suite'),
+        );
     }
 }
