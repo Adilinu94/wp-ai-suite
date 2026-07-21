@@ -84,8 +84,10 @@ test('replaces old chunks instead of accumulating them on re-ingestion', functio
     expect($firstChunkCount)->toBeGreaterThan(0);
 });
 
-test('isolates a failing document instead of aborting the whole batch', function (): void {
-    $failingService = new DocumentIngestionService(
+test('providers without embeddings still ingest via local hash fallback', function (): void {
+    // EmbeddingService falls back to LocalHashEmbedder when embed() is unsupported (DeepSeek,
+    // Anthropic, …) so a chat-only BYOK setup can still run RAG in Phase 1.
+    $fallbackService = new DocumentIngestionService(
         $this->documents,
         $this->chunker,
         $this->vectorStore,
@@ -97,15 +99,30 @@ test('isolates a failing document instead of aborting the whole batch', function
         new RawDocument('wp_content', '2', 'Dokument B', 'Inhalt B.'),
     ]);
 
-    $summary = $failingService->ingest($source);
+    $summary = $fallbackService->ingest($source);
 
-    expect($summary->processed)->toBe(0)
-        ->and($summary->failed)->toBe(2)
-        ->and($summary->errors)->toHaveCount(2);
+    expect($summary->processed)->toBe(2)
+        ->and($summary->failed)->toBe(0)
+        ->and($summary->errors)->toBe([]);
 
     $docA = $this->documents->findBySourceTypeAndRef('wp_content', '1');
-    expect($docA->status)->toBe('failed');
-    expect($this->documents->failedMessages[$docA->id])->toContain('Embeddings');
+    expect($docA->status)->toBe('processed');
+});
+
+test('isolates a hard document failure instead of aborting the whole batch', function (): void {
+    $source = new FakeKnowledgeSource([
+        new RawDocument('pdf', '1', 'Kaputt', '', 'PDF-Textextraktion fehlgeschlagen: broken'),
+        new RawDocument('wp_content', '2', 'Dokument B', 'Inhalt B der verarbeitet werden soll.'),
+    ]);
+
+    $summary = $this->service->ingest($source);
+
+    expect($summary->processed)->toBe(1)
+        ->and($summary->failed)->toBe(1)
+        ->and($summary->errors)->toHaveCount(1);
+
+    $docB = $this->documents->findBySourceTypeAndRef('wp_content', '2');
+    expect($docB->status)->toBe('processed');
 });
 
 test('a RawDocument with extractionError set (M6: e.g. a corrupt PDF) is marked failed without chunking/embedding attempts', function (): void {

@@ -15,6 +15,10 @@ weitergearbeitet wird.
 Plugin-Pfad: `wp-content/plugins/wp-ai-suite-main/`. Elementor aktiv, WooCommerce nicht.
 
 ### Erledigt in diesem Stand
+0. **Embedding-Fallback (M5/M7 mit DeepSeek):** DeepSeek hat keine Embeddings-API (HTTP 404).
+   EmbeddingService faellt auf LocalHashEmbedder zurueck — FAQ-Ingestion + RAG + knowledge_search
+   live auf hcm.local verifiziert.
+
 1. **Strauss / vendor-scoped (M6/M11-Bug):** `php bin/strauss.phar` laeuft; Call-Sites +
    Bootstrap-Autoload-Bridge fuer PSR-0-Pfad-Mismatch von smalot; Fallback unscoped→scoped in
    `SmalotPdfTextExtractor`. Deploy auf HCM inkl. `vendor-scoped/`.
@@ -589,3 +593,4 @@ ist als M6–M10** (siehe "Stand" oben): kein neuer Feature-Code, sondern
 und auf `gfr-industriemontagen.de` als Staging verproben — Dinge, die eine Sandbox-Session nicht
 selbst ausfuehren kann. Der neue Chat sollte das explizit wissen, bevor er einfach "mach weiter"
 wie bei M6–M10 interpretiert.
+

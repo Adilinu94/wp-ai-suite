@@ -5,31 +5,35 @@ declare(strict_types=1);
 namespace WPAiSuite\Knowledge\Embedding;
 
 use WPAiSuite\AiCore\Provider\Contract\AiProviderInterface;
+use WPAiSuite\AiCore\Provider\Contract\ProviderException;
+use WPAiSuite\AiCore\Provider\Contract\UnsupportedCapabilityException;
 
 /**
- * Duenner Wrapper um AiProviderInterface::embed() — eigene Klasse, weil Abschnitt 2 einen
- * eigenen Knowledge/Embedding/-Ordner vorsieht (getrennt von VectorStore/ und Ingestion/).
- * Batcht Aufrufe in handhabbare Bloecke, falls ein Dokument mehr Chunks produziert als ein
- * Provider pro embed()-Aufruf akzeptiert (OpenAI erlaubt z.B. bis zu 2048 Eingaben pro Call,
- * andere Provider koennen enger begrenzt sein) — fuer typische Phase-1-Dokumentgroessen meist ein
- * einziger Batch, schuetzt aber vor ueberraschend grossen Dokumenten.
+ * Thin wrapper around AiProviderInterface::embed() with a local fallback. Batches calls when a
+ * document produces more chunks than a provider accepts per request.
  *
- * Reicht AiProviderInterface::embed()'s UnsupportedCapabilityException unveraendert durch (siehe
- * AnthropicProvider, M1) — DocumentIngestionService faengt sie pro Dokument ab.
+ * Providers without an embeddings API (Anthropic, DeepSeek, chat-only OpenAI-compatible hosts)
+ * throw UnsupportedCapabilityException or ProviderException (e.g. HTTP 404). In that case we fall
+ * back to LocalHashEmbedder so RAG + knowledge_search still work for Phase-1 BYOK setups that only
+ * configure a chat model. Real embedding models remain preferred whenever embed() succeeds.
  */
 final class EmbeddingService
 {
     private const DEFAULT_BATCH_SIZE = 100;
 
+    private readonly LocalHashEmbedder $localFallback;
+
     public function __construct(
         private readonly AiProviderInterface $provider,
         private readonly int $batchSize = self::DEFAULT_BATCH_SIZE,
+        ?LocalHashEmbedder $localFallback = null,
     ) {
+        $this->localFallback = $localFallback ?? new LocalHashEmbedder();
     }
 
     /**
      * @param string[] $texts
-     * @return float[][] Ein Vektor pro Eingabetext, gleiche Reihenfolge wie $texts.
+     * @return float[][] One vector per input text, same order as $texts.
      */
     public function embedAll(array $texts): array
     {
@@ -37,12 +41,16 @@ final class EmbeddingService
             return [];
         }
 
-        $vectors = [];
+        try {
+            $vectors = [];
 
-        foreach (array_chunk($texts, max(1, $this->batchSize)) as $batch) {
-            array_push($vectors, ...$this->provider->embed($batch));
+            foreach (array_chunk($texts, max(1, $this->batchSize)) as $batch) {
+                array_push($vectors, ...$this->provider->embed($batch));
+            }
+
+            return $vectors;
+        } catch (UnsupportedCapabilityException | ProviderException) {
+            return $this->localFallback->embed($texts);
         }
-
-        return $vectors;
     }
 }
