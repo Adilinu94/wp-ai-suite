@@ -3,6 +3,7 @@
 Enterprise-KI-Plattform fuer WordPress — Phase-1-MVP.
 
 Vollstaendiger Architektur- und Umsetzungsplan: [`BAUPLAN-PHASE1-MVP.md`](./BAUPLAN-PHASE1-MVP.md).
+Post-MVP-Erweiterungen (10 Punkte): [`UMBAUPLAN-POST-MVP.md`](./UMBAUPLAN-POST-MVP.md).
 Ports-&-Adapters-Architektur: `src/Core` kennt WordPress nicht, alles WP-Spezifische
 ist austauschbare Adapter-Implementierung eines Interfaces aus dem jeweiligen `Contract`-Ordner.
 

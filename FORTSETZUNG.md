@@ -33,15 +33,19 @@ Plugin-Pfad: `wp-content/plugins/wp-ai-suite-main/`. Elementor aktiv, WooCommerc
 6. **HCM-Config (ohne Secret):** `custom` / DeepSeek / `https://api.deepseek.com/v1` /
    Modell `deepseek-chat` gesetzt. Encryption-Key in wp-config vorhanden.
 
-### Blocker fuer Live-Chat (M2/M5/M7)
-**Kein API-Key in `wpais_api_keys`.** Vermutlich ging der fruehere Admin-Save verloren, weil die
-Tabelle beim Speichern noch nicht existierte. Einmal unter WP AI Suite → Einstellungen den
-DeepSeek-Key neu speichern — danach M2/M5/M7 live testbar.
+### Live-Verprobung (erledigt auf hcm.local)
+- M2 Chat (DeepSeek), M5 RAG+FAQ-Quellen, M7 `knowledge_search` + `woocommerce_product_search`
+- Key nur verschluesselt in `wpais_api_keys` (nie im Git-Repo)
+- WooCommerce aktiv; Elementor aktiv
 
 ### Noch offen (M11)
-- Live-Chat + RAG + Tools sobald Key da
-- Elementor-Widget manuell im Browser
+- Elementor-Widget manuell im Browser (Umbauplan Punkt 2)
 - Integration-Tests brauchen WP-Testsuite (siehe `tests/Integration/README.md`)
+- Release-ZIP + volle Staging-Checkliste (Umbauplan Punkt 10)
+
+### Post-MVP
+Detaillierter Umsetzungsplan fuer die 10 priorisierten Erweiterungen:
+siehe **`UMBAUPLAN-POST-MVP.md`** (Wellen A–E, DoD, Dateien, Risiken, Ticket-Schnitte U1–U10).
 
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 
