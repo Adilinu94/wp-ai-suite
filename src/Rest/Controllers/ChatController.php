@@ -17,6 +17,7 @@ use WPAiSuite\Knowledge\Embedding\EmbeddingService;
 use WPAiSuite\Knowledge\RagService;
 use WPAiSuite\Knowledge\RetrievedSource;
 use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
+use WPAiSuite\Security\ClientIpResolver;
 use WPAiSuite\Security\PromptGuard;
 use WPAiSuite\Security\RateLimiter;
 use WPAiSuite\Tools\Builtin\KnowledgeSearchTool;
@@ -75,6 +76,7 @@ final class ChatController
         private readonly RateLimiter $rateLimiter,
         private readonly PromptGuard $promptGuard,
         private readonly EmbeddingProviderResolver $embeddingProviderResolver,
+        private readonly ClientIpResolver $clientIpResolver,
     ) {
     }
 
@@ -115,7 +117,14 @@ final class ChatController
 
         $sessionTokenParam = $request->get_param('session_token');
         $sessionToken = is_string($sessionTokenParam) && $sessionTokenParam !== '' ? $sessionTokenParam : null;
-        $rateLimitKey = $sessionToken ?? ('ip:' . (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+        // Umbauplan Post-MVP Punkt 7: Session-Token bleibt primaerer Key (unveraendert). Der
+        // IP-Fallback laeuft jetzt ueber ClientIpResolver statt rohem $_SERVER['REMOTE_ADDR'] —
+        // siehe dessen Docblock fuer die Proxy-Trust-Logik.
+        $rateLimitKey = $sessionToken ?? ('ip:' . $this->clientIpResolver->resolve(
+            $_SERVER,
+            (bool) get_option('wpais_trust_proxy', false),
+            $this->trustedProxiesList(),
+        ));
 
         if (!$this->rateLimiter->attempt($rateLimitKey)) {
             return new \WP_Error(
@@ -255,5 +264,18 @@ final class ChatController
     private function endSse(): void
     {
         $this->sendSseEvent('done', []);
+    }
+
+    /**
+     * Umbauplan Post-MVP Punkt 7: eine Eintragung pro Zeile in der Admin-Textarea
+     * (`wpais_trusted_proxies`), Leerzeilen ignoriert — siehe ProviderSettingsPage.
+     *
+     * @return string[]
+     */
+    private function trustedProxiesList(): array
+    {
+        $raw = (string) get_option('wpais_trusted_proxies', '');
+
+        return array_values(array_filter(array_map('trim', explode("\n", $raw)), static fn (string $line): bool => $line !== ''));
     }
 }

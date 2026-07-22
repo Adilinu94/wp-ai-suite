@@ -59,6 +59,14 @@ hcm.local oder eine vergleichbare laufende Instanz.
 U2 (Elementor-QA) bleibt aus demselben Grund unangetastet: braucht Browser-Zugriff auf
 hcm.local, dafuer existiert aktuell kein verbundener Connector.
 
+**U7 (Rate-Limit hinter Proxy/CDN):** ebenfalls code-fertig. `ClientIpResolver` (neu) ist die
+einzige Klasse in diesem Umbau, die tatsaechlich WP-frei unit-testbar ist (nimmt `$_SERVER`,
+trust-Flag und Proxy-Liste als Parameter statt selbst `get_option()`/Superglobals zu lesen) —
+deshalb zusaetzlich zum Syntax-Check auch tatsaechlich per PHP-CLI mit 11 Testfaellen
+durchlaufen (IPv4/IPv6, CIDR-Grenzen, Spoofing ohne Trust, XFF-Ketten, X-Real-IP-Prioritaet)
+statt nur `php -l`. `ChatController`s IP-Fallback nutzt jetzt den Resolver, Default bleibt
+unveraendert (kein Trust) — Checkbox + Trusted-Proxies-Textarea auf der Einstellungsseite.
+
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 
 | Frage | Entscheidung |

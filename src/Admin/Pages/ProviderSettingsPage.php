@@ -352,6 +352,26 @@ final class ProviderSettingsPage
         );
         echo '<p class="description">' . esc_html__('Konversationen ohne neue Nachricht seit dieser Anzahl Tage werden taeglich per Cron geloescht (inkl. aller Nachrichten). 0 = Aufbewahrungsfrist deaktiviert (nichts wird automatisch geloescht).', 'wp-ai-suite') . '</p>';
         echo '</td></tr>';
+
+        // Umbauplan Post-MVP Punkt 7: siehe ClientIpResolver-Docblock. Standard = aus, damit
+        // ohne bewusste Aktivierung niemand versehentlich einen gefaelschten X-Forwarded-For-
+        // Header vertraut.
+        echo '<tr><th scope="row">' . esc_html__('Proxy/CDN vertrauen', 'wp-ai-suite') . '</th><td>';
+        printf(
+            '<label><input type="checkbox" name="wpais_trust_proxy" value="1"%s /> %s</label>',
+            checked(get_option('wpais_trust_proxy', false), true, false),
+            esc_html__('X-Forwarded-For/X-Real-IP fuer die Rate-Limit-IP verwenden, wenn die Anfrage von einer der unten eingetragenen Adressen kommt.', 'wp-ai-suite'),
+        );
+        echo '<p class="description" style="color:#996800;">' . esc_html__('Nur aktivieren, wenn du den davor liegenden Proxy selbst kontrollierst (z.B. dein eigener Cloudflare/nginx). Sonst kann jeder Besucher seine Rate-Limit-IP per Header faelschen.', 'wp-ai-suite') . '</p>';
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row"><label for="wpais_trusted_proxies">' . esc_html__('Vertrauenswuerdige Proxy-IPs', 'wp-ai-suite') . '</label></th><td>';
+        printf(
+            '<textarea class="large-text code" rows="3" name="wpais_trusted_proxies" id="wpais_trusted_proxies" placeholder="10.0.0.0/8&#10;192.168.1.5">%s</textarea>',
+            esc_textarea((string) get_option('wpais_trusted_proxies', '')),
+        );
+        echo '<p class="description">' . esc_html__('Eine IP oder CIDR-Bereich pro Zeile. Nur relevant, wenn "Proxy/CDN vertrauen" aktiv ist.', 'wp-ai-suite') . '</p>';
+        echo '</td></tr>';
     }
 
     /** M10: der in M1 bewusst zurueckgestellte System-Prompt-Editor (siehe Klassen-Docblock). */
@@ -441,6 +461,16 @@ final class ProviderSettingsPage
             // 0 ist gueltig (= Retention deaktiviert, siehe RetentionCleanup::run()), negative
             // Werte ergeben fachlich keinen Sinn.
             update_option(RetentionCleanup::OPTION_RETENTION_DAYS, max(0, (int) $_POST['wpais_retention_days']));
+        }
+
+        // Umbauplan Post-MVP Punkt 7. Checkbox: WordPress schickt bei einer NICHT angehakten
+        // Checkbox ueberhaupt kein POST-Feld — isset() waere hier also immer false und der Wert
+        // liesse sich nie wieder ausschalten. Deshalb explizit auf Anwesenheit pruefen statt auf
+        // isset(), wie bei den anderen Feldern.
+        update_option('wpais_trust_proxy', !empty($_POST['wpais_trust_proxy']));
+
+        if (isset($_POST['wpais_trusted_proxies'])) {
+            update_option('wpais_trusted_proxies', sanitize_textarea_field(wp_unslash($_POST['wpais_trusted_proxies'])));
         }
 
         if (isset($_POST['wpais_system_prompt'])) {

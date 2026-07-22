@@ -33,6 +33,7 @@ use WPAiSuite\Rest\Controllers\ConversationController;
 use WPAiSuite\Rest\Controllers\DocumentsController;
 use WPAiSuite\Security\ApiKeyRepositoryInterface;
 use WPAiSuite\Security\ApiKeyVault;
+use WPAiSuite\Security\ClientIpResolver;
 use WPAiSuite\Security\PromptGuard;
 use WPAiSuite\Security\RateLimiter;
 use WPAiSuite\Security\RetentionCleanup;
@@ -199,6 +200,12 @@ final class Plugin
             return new EmbeddingProviderResolver($c->get(ProviderFactory::class));
         });
 
+        // Umbauplan Post-MVP Punkt 7: keine Abhaengigkeiten, daher keine eigene Factory-Klausel
+        // noetig - direkt instanziiert, analog zu anderen abhaengigkeitsfreien Klassen hier.
+        $this->container->set(ClientIpResolver::class, static function (): ClientIpResolver {
+            return new ClientIpResolver();
+        });
+
         $this->container->set(ChatController::class, static function (Container $c): ChatController {
             return new ChatController(
                 $c->get(ConversationRepositoryInterface::class),
@@ -209,6 +216,7 @@ final class Plugin
                 $c->get(RateLimiter::class),
                 $c->get(PromptGuard::class),
                 $c->get(EmbeddingProviderResolver::class),
+                $c->get(ClientIpResolver::class),
             );
         });
 

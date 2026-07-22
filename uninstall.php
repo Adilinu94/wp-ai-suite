@@ -44,6 +44,9 @@ $wpais_options = [
     'wpais_embedding_label',
     'wpais_embedding_base_url',
     'wpais_embedding_model',
+    // Umbauplan Post-MVP Punkt 7: Proxy-Trust fuer die Rate-Limit-IP-Ermittlung.
+    'wpais_trust_proxy',
+    'wpais_trusted_proxies',
 ];
 
 foreach ($wpais_options as $wpais_option) {
