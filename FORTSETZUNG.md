@@ -47,6 +47,18 @@ Plugin-Pfad: `wp-content/plugins/wp-ai-suite-main/`. Elementor aktiv, WooCommerc
 Detaillierter Umsetzungsplan fuer die 10 priorisierten Erweiterungen:
 siehe **`UMBAUPLAN-POST-MVP.md`** (Wellen A–E, DoD, Dateien, Risiken, Ticket-Schnitte U1–U10).
 
+**U1 (Separater Embedding-Provider) + U4 (Admin Shortcode + Verbindungstest):** code-fertig,
+ausschliesslich per GitHub-Commit aus einer Sandbox ohne hcm.local-Zugriff umgesetzt (kein Live-
+Test moeglich). `EmbeddingProviderResolver` (neu) loest optional einen von Chat unabhaengigen
+Embedding-Provider auf, sonst Fallback auf den Chat-Provider (unveraendert LocalHashEmbedder
+darunter). `ConnectionTestController` (neu, `POST /wpais/v1/admin/connection-test`) prueft Chat-
+und Embedding-Verbindung einzeln, ohne stillschweigenden Fallback zu verstecken. Offen aus den
+jeweiligen DoDs: Pest-Lauf (kein Composer/Packagist in dieser Sandbox) und die manuellen
+Live-Checks (Retrieval-Qualitaet, Verbindungstest-Buttons, <15s-Latenz) — beides braucht
+hcm.local oder eine vergleichbare laufende Instanz.
+U2 (Elementor-QA) bleibt aus demselben Grund unangetastet: braucht Browser-Zugriff auf
+hcm.local, dafuer existiert aktuell kein verbundener Connector.
+
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 
 | Frage | Entscheidung |

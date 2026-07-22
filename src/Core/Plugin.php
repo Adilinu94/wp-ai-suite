@@ -28,6 +28,7 @@ use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
 use WPAiSuite\Knowledge\VectorStore\WpdbJsonVectorStore;
 use WPAiSuite\Knowledge\WpdbDocumentRepository;
 use WPAiSuite\Rest\Controllers\ChatController;
+use WPAiSuite\Rest\Controllers\ConnectionTestController;
 use WPAiSuite\Rest\Controllers\ConversationController;
 use WPAiSuite\Rest\Controllers\DocumentsController;
 use WPAiSuite\Security\ApiKeyRepositoryInterface;
@@ -215,6 +216,16 @@ final class Plugin
             return new ConversationController($c->get(ConversationRepositoryInterface::class));
         });
 
+        // Umbauplan Post-MVP Punkt 4: eigener, schlankerer REST-Pfad nur fuer den
+        // Admin-Verbindungstest (siehe ConnectionTestController-Docblock) — deshalb neben
+        // ChatController registriert, nicht Teil davon.
+        $this->container->set(ConnectionTestController::class, static function (Container $c): ConnectionTestController {
+            return new ConnectionTestController(
+                $c->get(ActiveProviderResolver::class),
+                $c->get(EmbeddingProviderResolver::class),
+            );
+        });
+
         $this->container->set(UsageCostEstimator::class, static function (): UsageCostEstimator {
             return new UsageCostEstimator();
         });
@@ -227,6 +238,7 @@ final class Plugin
     private function bootConversationServices(): void
     {
         $this->container->get(ChatController::class)->register();
+        $this->container->get(ConnectionTestController::class)->register();
         $this->container->get(ConversationController::class)->register();
         $this->container->get(UsageLogsPage::class)->register();
     }

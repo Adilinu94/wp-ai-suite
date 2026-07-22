@@ -56,6 +56,35 @@ final class ProviderSettingsPage
     {
         add_action('admin_menu', [$this, 'addMenuPage']);
         add_action('admin_post_' . self::NONCE_ACTION, [$this, 'handleSave']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueueAdminAssets']);
+    }
+
+    /**
+     * Umbauplan Post-MVP Punkt 4: nur auf der eigenen Einstellungsseite geladen (derselbe
+     * Screen-ID-Ansatz wie PrivacyNoticeAdminNotice) — nicht sitewide in wp-admin, genau wie
+     * AssetManager das Frontend-Bundle nicht sitewide laedt (siehe dortiger Docblock).
+     */
+    public function enqueueAdminAssets(string $hookSuffix): void
+    {
+        if ($hookSuffix !== 'toplevel_page_wpais-settings') {
+            return;
+        }
+
+        wp_enqueue_script(
+            'wpais-admin',
+            WPAIS_PLUGIN_URL . 'assets/js/wpais-admin.js',
+            [],
+            WPAIS_VERSION,
+            true,
+        );
+
+        wp_localize_script('wpais-admin', 'wpaisAdmin', [
+            'restUrl' => esc_url_raw(rest_url('wpais/v1/')),
+            'nonce' => wp_create_nonce('wp_rest'),
+            'testingLabel' => __('Teste…', 'wp-ai-suite'),
+            'successLabel' => __('Erfolg', 'wp-ai-suite'),
+            'errorLabel' => __('Fehlgeschlagen.', 'wp-ai-suite'),
+        ]);
     }
 
     /** Wird auch von Plugin.php beim Verdrahten von ConversationService genutzt. */
@@ -86,6 +115,13 @@ final class ProviderSettingsPage
 
         echo '<div class="wrap"><h1>' . esc_html__('WP AI Suite — Provider', 'wp-ai-suite') . '</h1>';
 
+        // Umbauplan Post-MVP Punkt 4: "Erfolg gruen / Fehler rot" (Implementierungsschritt 4) —
+        // 3 Farbregeln fuer ein <span>, dafuer keine eigene CSS-Datei + Enqueue.
+        echo '<style>.wpais-test-status{margin-left:.5em;font-weight:600}'
+            . '.wpais-test-status--success{color:#008a20}'
+            . '.wpais-test-status--error{color:#d63638}'
+            . '.wpais-test-status--warning{color:#996800}</style>';
+
         if (isset($_GET['wpais_saved'])) {
             echo '<div class="notice notice-success"><p>' . esc_html__('Einstellungen gespeichert.', 'wp-ai-suite') . '</p></div>';
         }
@@ -114,6 +150,10 @@ final class ProviderSettingsPage
         echo '<h2>' . esc_html__('Embeddings', 'wp-ai-suite') . '</h2>';
         echo '<table class="form-table"><tbody>';
         $this->renderEmbeddingProviderFields();
+        echo '</tbody></table>';
+        echo '<h2>' . esc_html__('Verbindungstest & Shortcode', 'wp-ai-suite') . '</h2>';
+        echo '<table class="form-table"><tbody>';
+        $this->renderConnectionTestAndShortcode();
         echo '</tbody></table>';
         echo '<h2>' . esc_html__('System-Prompt', 'wp-ai-suite') . '</h2>';
         echo '<table class="form-table"><tbody>';
@@ -255,6 +295,37 @@ final class ProviderSettingsPage
             esc_attr((string) get_option(EmbeddingProviderResolver::OPTION_MODEL, '')),
         );
         echo '<p class="description">' . esc_html__('Nur fuer "OpenAI-kompatibel, separat" relevant. Leer = text-embedding-3-small (OpenAI-Modellname — passt nicht zu jedem Anbieter, bei lokalen Runtimes den dortigen Modellnamen eintragen).', 'wp-ai-suite') . '</p>';
+        echo '</td></tr>';
+    }
+
+    /**
+     * Umbauplan Post-MVP Punkt 4: Shortcode zum Kopieren + zwei Verbindungstest-Buttons, die
+     * ConnectionTestController ueber wpais-admin.js aufrufen. Reiner Anzeige-Code hier — die
+     * eigentliche Testlogik lebt bewusst im Controller (REST-Endpunkt), nicht inline in dieser
+     * Klasse, damit derselbe Test spaeter auch von woanders (z.B. WP-CLI) wiederverwendbar bleibt.
+     */
+    private function renderConnectionTestAndShortcode(): void
+    {
+        echo '<tr><th scope="row">' . esc_html__('Shortcode', 'wp-ai-suite') . '</th><td>';
+        echo '<code id="wpais-shortcode-text">[wpais_chat]</code> ';
+        printf(
+            '<button type="button" class="button" data-wpais-copy data-copy-text="%1$s" data-copied-label="%2$s">%3$s</button>',
+            esc_attr('[wpais_chat]'),
+            esc_attr__('Kopiert!', 'wp-ai-suite'),
+            esc_html__('Kopieren', 'wp-ai-suite'),
+        );
+        echo '<p class="description">' . esc_html__('In jeden Beitrag/jede Seite einfuegen. Fuer Elementor stattdessen das "AI Chat"-Widget aus dem Panel ziehen (identisches Verhalten).', 'wp-ai-suite') . '</p>';
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row">' . esc_html__('Chat-Provider testen', 'wp-ai-suite') . '</th><td>';
+        echo '<button type="button" class="button" data-wpais-test="chat">' . esc_html__('Chat testen', 'wp-ai-suite') . '</button> ';
+        echo '<span class="wpais-test-status" data-wpais-test-status="chat"></span>';
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row">' . esc_html__('Embedding-Provider testen', 'wp-ai-suite') . '</th><td>';
+        echo '<button type="button" class="button" data-wpais-test="embed">' . esc_html__('Embeddings testen', 'wp-ai-suite') . '</button> ';
+        echo '<span class="wpais-test-status" data-wpais-test-status="embed"></span>';
+        echo '<p class="description">' . esc_html__('Speichere die Einstellungen zuerst, sonst testet der Button noch den vorherigen Stand.', 'wp-ai-suite') . '</p>';
         echo '</td></tr>';
     }
 
