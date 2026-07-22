@@ -39,6 +39,11 @@ $wpais_options = [
     'wpais_retention_days',
     'wpais_rate_limit_max',
     'wpais_rate_limit_window_seconds',
+    // Umbauplan Post-MVP Punkt 1: separater Embedding-Provider.
+    'wpais_embedding_provider',
+    'wpais_embedding_label',
+    'wpais_embedding_base_url',
+    'wpais_embedding_model',
 ];
 
 foreach ($wpais_options as $wpais_option) {

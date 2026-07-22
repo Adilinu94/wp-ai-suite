@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WPAiSuite\Admin\Pages;
 
 use WPAiSuite\AiCore\Provider\ProviderFactory;
+use WPAiSuite\Knowledge\Embedding\EmbeddingProviderResolver;
 use WPAiSuite\Security\ApiKeyRepositoryInterface;
 use WPAiSuite\Security\RetentionCleanup;
 
@@ -19,6 +20,11 @@ use WPAiSuite\Security\RetentionCleanup;
  * Abschnitt, `renderSystemPromptField()`/`wpais_system_prompt`) — bis M9 bewusst
  * zurueckgestellt (Regel 2, "Architektur nicht eigenmaechtig erweitern"), bis dahin nutzte
  * `SystemPromptBuilder` nur den Default-Text.
+ *
+ * Umbauplan Post-MVP Punkt 1 ergaenzt einen eigenen "Embeddings"-Abschnitt
+ * (`renderEmbeddingProviderFields()`) fuer einen vom Chat-Provider unabhaengigen
+ * Embedding-Provider — die Optionsnamen dafuer gehoeren EmbeddingProviderResolver (analog dazu,
+ * wie OPTION_RATE_LIMIT_* oben RateLimiter gehoeren, nicht dieser Klasse).
  */
 final class ProviderSettingsPage
 {
@@ -84,6 +90,14 @@ final class ProviderSettingsPage
             echo '<div class="notice notice-success"><p>' . esc_html__('Einstellungen gespeichert.', 'wp-ai-suite') . '</p></div>';
         }
 
+        // Umbauplan Post-MVP Punkt 1, Risiko-Hinweis: ein Embedding-Provider-Wechsel macht
+        // bestehende Chunks nicht automatisch inkompatibel (Cosine-Similarity funktioniert
+        // weiter), liefert mit dem neuen Provider aber erst nach Neu-Indexierung wieder
+        // konsistent gute Treffer — deshalb nur ein Hinweis, kein Blocker.
+        if (isset($_GET['wpais_embedding_changed'])) {
+            echo '<div class="notice notice-warning"><p>' . esc_html__('Embedding-Provider geaendert — bestehende Wissensbasis-Eintraege wurden mit dem vorherigen Provider erstellt. Fuer beste Ergebnisse: Dokumente mit externer Quelle (PDF, WordPress-Inhalte) auf der Wissensbasis-Seite neu indexieren; FAQ/Custom-Text-Eintraege erneut einreichen.', 'wp-ai-suite') . '</p></div>';
+        }
+
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
         wp_nonce_field(self::NONCE_ACTION, '_wpais_nonce');
         echo '<input type="hidden" name="action" value="' . esc_attr(self::NONCE_ACTION) . '" />';
@@ -96,6 +110,10 @@ final class ProviderSettingsPage
         $this->renderModelField('anthropic', __('Anthropic Standard-Modell', 'wp-ai-suite'), 'z.B. claude-sonnet-5');
         $this->renderCustomProviderFields();
 
+        echo '</tbody></table>';
+        echo '<h2>' . esc_html__('Embeddings', 'wp-ai-suite') . '</h2>';
+        echo '<table class="form-table"><tbody>';
+        $this->renderEmbeddingProviderFields();
         echo '</tbody></table>';
         echo '<h2>' . esc_html__('System-Prompt', 'wp-ai-suite') . '</h2>';
         echo '<table class="form-table"><tbody>';
@@ -182,6 +200,64 @@ final class ProviderSettingsPage
         $this->renderModelField('custom', __('OpenAI-kompatibel — Standard-Modell', 'wp-ai-suite'), 'z.B. deepseek-chat');
     }
 
+    /**
+     * Umbauplan Post-MVP Punkt 1: optionaler, vom Chat-Provider unabhaengiger Embedding-Provider.
+     * "OpenAI"/"Anthropic" hier nutzen bewusst denselben gespeicherten Key wie oben (kein
+     * zweites Key-Feld noetig — derselbe Account, andere Verwendung). Nur der eigenstaendige
+     * OpenAI-kompatible Fall (z.B. ein separates lokales Ollama nur fuer Embeddings) braucht
+     * eigene Key-/Basis-URL-/Modell-Felder, deshalb der eigene Provider-Key "custom_embed"
+     * statt den bestehenden "custom"-Slot der Chat-Seite mitzubenutzen (siehe
+     * EmbeddingProviderResolver::CUSTOM_KEY-Docblock).
+     */
+    private function renderEmbeddingProviderFields(): void
+    {
+        $current = (string) get_option(EmbeddingProviderResolver::OPTION_PROVIDER, '');
+        $options = [
+            '' => __('Wie Chat-Provider (Standard)', 'wp-ai-suite'),
+            'openai' => __('OpenAI (nutzt den OpenAI-Key oben)', 'wp-ai-suite'),
+            'anthropic' => __('Anthropic (nutzt den Anthropic-Key oben)', 'wp-ai-suite'),
+            EmbeddingProviderResolver::CUSTOM_KEY => __('OpenAI-kompatibel, separat (z.B. lokales Ollama)', 'wp-ai-suite'),
+        ];
+
+        echo '<tr><th scope="row"><label for="wpais_embedding_provider">' . esc_html__('Embedding-Provider', 'wp-ai-suite') . '</label></th><td>';
+        echo '<select name="wpais_embedding_provider" id="wpais_embedding_provider">';
+        foreach ($options as $key => $label) {
+            printf(
+                '<option value="%s"%s>%s</option>',
+                esc_attr($key),
+                selected($current, $key, false),
+                esc_html($label),
+            );
+        }
+        echo '</select>';
+        echo '<p class="description">' . esc_html__('Nur noetig, wenn der aktive Chat-Provider keine brauchbare Embeddings-API hat (z.B. DeepSeek) — ohne Auswahl faellt die Wissensbasis automatisch auf einen einfachen lokalen Vergleich zurueck (funktioniert, aber schwaecher als ein echtes Embedding-Modell).', 'wp-ai-suite') . '</p>';
+        echo '</td></tr>';
+
+        $this->renderKeyField(EmbeddingProviderResolver::CUSTOM_KEY, __('Separat — API-Key', 'wp-ai-suite'));
+
+        echo '<tr><th scope="row"><label for="wpais_embedding_label">' . esc_html__('Separat — Name', 'wp-ai-suite') . '</label></th><td>';
+        printf(
+            '<input type="text" class="regular-text" name="wpais_embedding_label" id="wpais_embedding_label" value="%s" placeholder="z.B. Lokales Ollama" />',
+            esc_attr((string) get_option(EmbeddingProviderResolver::OPTION_LABEL, '')),
+        );
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row"><label for="wpais_embedding_base_url">' . esc_html__('Separat — Basis-URL', 'wp-ai-suite') . '</label></th><td>';
+        printf(
+            '<input type="url" class="regular-text" name="wpais_embedding_base_url" id="wpais_embedding_base_url" value="%s" placeholder="http://localhost:11434/v1" />',
+            esc_attr((string) get_option(EmbeddingProviderResolver::OPTION_BASE_URL, '')),
+        );
+        echo '</td></tr>';
+
+        echo '<tr><th scope="row"><label for="wpais_embedding_model">' . esc_html__('Separat — Embedding-Modell', 'wp-ai-suite') . '</label></th><td>';
+        printf(
+            '<input type="text" class="regular-text" name="wpais_embedding_model" id="wpais_embedding_model" value="%s" placeholder="z.B. nomic-embed-text" />',
+            esc_attr((string) get_option(EmbeddingProviderResolver::OPTION_MODEL, '')),
+        );
+        echo '<p class="description">' . esc_html__('Nur fuer "OpenAI-kompatibel, separat" relevant. Leer = text-embedding-3-small (OpenAI-Modellname — passt nicht zu jedem Anbieter, bei lokalen Runtimes den dortigen Modellnamen eintragen).', 'wp-ai-suite') . '</p>';
+        echo '</td></tr>';
+    }
+
     /** M9: Rate-Limiting + Aufbewahrungsfrist (Bauplan Abschnitt 9). */
     private function renderSecurityFields(): void
     {
@@ -252,6 +328,36 @@ final class ProviderSettingsPage
             update_option(self::OPTION_CUSTOM_LABEL, sanitize_text_field(wp_unslash($_POST['wpais_custom_label'])));
         }
 
+        // Umbauplan Post-MVP Punkt 1: eigener Embedding-Provider, siehe
+        // renderEmbeddingProviderFields()-Docblock. $embeddingProviderChanged wird unten fuer
+        // den Redirect gebraucht (Re-Index-Hinweis), deshalb der Vorher-Wert VOR dem Speichern.
+        $previousEmbeddingProvider = (string) get_option(EmbeddingProviderResolver::OPTION_PROVIDER, '');
+
+        $embeddingProvider = isset($_POST['wpais_embedding_provider'])
+            ? sanitize_key(wp_unslash($_POST['wpais_embedding_provider']))
+            : '';
+        update_option(EmbeddingProviderResolver::OPTION_PROVIDER, $embeddingProvider);
+
+        $embeddingKeyField = 'wpais_key_' . EmbeddingProviderResolver::CUSTOM_KEY;
+        if (!empty($_POST[$embeddingKeyField])) {
+            $this->apiKeys->store(
+                EmbeddingProviderResolver::CUSTOM_KEY,
+                sanitize_text_field(wp_unslash($_POST[$embeddingKeyField])),
+            );
+        }
+
+        if (isset($_POST['wpais_embedding_label'])) {
+            update_option(EmbeddingProviderResolver::OPTION_LABEL, sanitize_text_field(wp_unslash($_POST['wpais_embedding_label'])));
+        }
+
+        if (isset($_POST['wpais_embedding_base_url'])) {
+            update_option(EmbeddingProviderResolver::OPTION_BASE_URL, esc_url_raw(wp_unslash($_POST['wpais_embedding_base_url'])));
+        }
+
+        if (isset($_POST['wpais_embedding_model'])) {
+            update_option(EmbeddingProviderResolver::OPTION_MODEL, sanitize_text_field(wp_unslash($_POST['wpais_embedding_model'])));
+        }
+
         if (isset($_POST['wpais_rate_limit_max'])) {
             update_option(self::OPTION_RATE_LIMIT_MAX, max(1, (int) $_POST['wpais_rate_limit_max']));
         }
@@ -278,7 +384,12 @@ final class ProviderSettingsPage
             $redirectTarget = admin_url('admin.php?page=wpais-settings');
         }
 
-        wp_safe_redirect(add_query_arg('wpais_saved', '1', $redirectTarget));
+        $redirectArgs = ['wpais_saved' => '1'];
+        if ($embeddingProvider !== $previousEmbeddingProvider) {
+            $redirectArgs['wpais_embedding_changed'] = '1';
+        }
+
+        wp_safe_redirect(add_query_arg($redirectArgs, $redirectTarget));
         exit;
     }
 }

@@ -38,8 +38,11 @@ final class ProviderFactory
     }
 
     /**
-     * @param array{base_url?:string, label?:string, supports_tools?:bool} $customConfig
-     *        Nur fuer Provider-Keys ausserhalb von "openai"/"anthropic" relevant.
+     * @param array{base_url?:string, label?:string, supports_tools?:bool, embedding_model?:string} $customConfig
+     *        Nur fuer Provider-Keys ausserhalb von "openai"/"anthropic" relevant. embedding_model
+     *        (Umbauplan Post-MVP Punkt 1) ueberschreibt AbstractOpenAiFormatProvider's
+     *        Default-Modell 'text-embedding-3-small' — noetig fuer OpenAI-kompatible
+     *        Embedding-Endpunkte mit anderer Modellbenennung (z.B. Ollama "nomic-embed-text").
      *
      * @throws \InvalidArgumentException Wenn fuer einen kompatiblen Provider keine Basis-URL
      *         ermittelbar ist (weder Preset noch $customConfig['base_url']).
@@ -85,6 +88,8 @@ final class ProviderFactory
             configuredSupportsTools: $customConfig['supports_tools']
                 ?? $preset['supports_tools']
                 ?? true,
+            configuredEmbeddingModel: $this->nonEmptyString($customConfig['embedding_model'] ?? null)
+                ?? 'text-embedding-3-small',
         );
     }
 

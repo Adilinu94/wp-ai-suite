@@ -12,6 +12,7 @@ use WPAiSuite\AiCore\Provider\ActiveProviderResolver;
 use WPAiSuite\AiCore\Provider\Contract\ProviderException;
 use WPAiSuite\AiCore\Provider\NoActiveProviderException;
 use WPAiSuite\Knowledge\DocumentRepositoryInterface;
+use WPAiSuite\Knowledge\Embedding\EmbeddingProviderResolver;
 use WPAiSuite\Knowledge\Embedding\EmbeddingService;
 use WPAiSuite\Knowledge\RagService;
 use WPAiSuite\Knowledge\RetrievedSource;
@@ -73,6 +74,7 @@ final class ChatController
         private readonly DocumentRepositoryInterface $documents,
         private readonly RateLimiter $rateLimiter,
         private readonly PromptGuard $promptGuard,
+        private readonly EmbeddingProviderResolver $embeddingProviderResolver,
     ) {
     }
 
@@ -140,7 +142,11 @@ final class ChatController
             return new \WP_Error('wpais_no_active_provider', $e->getMessage(), ['status' => 503]);
         }
 
-        $ragService = new RagService($this->vectorStore, new EmbeddingService($provider), $this->documents);
+        // Umbauplan Post-MVP Punkt 1: eigenstaendig konfigurierter Embedding-Provider hat
+        // Vorrang, faellt aber auf den bereits aufgeloesten Chat-Provider zurueck, wenn keiner
+        // eingerichtet ist — siehe EmbeddingProviderResolver-Docblock.
+        $embeddingProvider = $this->embeddingProviderResolver->resolve() ?? $provider;
+        $ragService = new RagService($this->vectorStore, new EmbeddingService($embeddingProvider), $this->documents);
 
         // M7: KnowledgeSearchTool braucht denselben $ragService wie das automatische M5-
         // Retrieval oben (bzw. wird gleich unten aufgerufen) — deshalb hier, nicht im

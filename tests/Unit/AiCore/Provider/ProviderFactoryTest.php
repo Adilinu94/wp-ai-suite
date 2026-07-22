@@ -73,6 +73,36 @@ test('throws when a custom provider has neither a preset nor an explicit base_ur
     expect(fn () => $this->factory->make('unknown-provider'))->toThrow(InvalidArgumentException::class);
 });
 
+test('embedding_model in customConfig overrides the default embeddings model (Umbauplan Punkt 1)', function (): void {
+    $this->apiKeys->store('local-embed', 'sk-local');
+
+    $provider = $this->factory->make('local-embed', [
+        'base_url' => 'http://localhost:11434/v1',
+        'embedding_model' => 'nomic-embed-text',
+    ]);
+
+    // configuredEmbeddingModel ist private (siehe OpenAiCompatibleProvider) — per Reflection
+    // geprueft statt einen produktivcode-seitigen Getter nur fuer diesen Test einzufuehren.
+    $reflection = new ReflectionProperty($provider, 'configuredEmbeddingModel');
+    $reflection->setAccessible(true);
+
+    expect($provider)->toBeInstanceOf(OpenAiCompatibleProvider::class)
+        ->and($reflection->getValue($provider))->toBe('nomic-embed-text');
+});
+
+test('omitting embedding_model in customConfig keeps the OpenAI default embeddings model', function (): void {
+    $this->apiKeys->store('local-embed-2', 'sk-local');
+
+    $provider = $this->factory->make('local-embed-2', [
+        'base_url' => 'http://localhost:11434/v1',
+    ]);
+
+    $reflection = new ReflectionProperty($provider, 'configuredEmbeddingModel');
+    $reflection->setAccessible(true);
+
+    expect($reflection->getValue($provider))->toBe('text-embedding-3-small');
+});
+
 test('knownCompatiblePresets() lists the built-in presets', function (): void {
     expect($this->factory->knownCompatiblePresets())->toHaveKey('deepseek')
         ->toHaveKey('mistral');

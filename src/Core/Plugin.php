@@ -21,6 +21,7 @@ use WPAiSuite\Frontend\ChatWidget\Shortcode;
 use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
 use WPAiSuite\Knowledge\Chunking\RecursiveTextChunker;
 use WPAiSuite\Knowledge\DocumentRepositoryInterface;
+use WPAiSuite\Knowledge\Embedding\EmbeddingProviderResolver;
 use WPAiSuite\Knowledge\Ingestion\PdfTextExtractorInterface;
 use WPAiSuite\Knowledge\Ingestion\SmalotPdfTextExtractor;
 use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
@@ -189,6 +190,14 @@ final class Plugin
             return new ActiveProviderResolver($c->get(ProviderFactory::class));
         });
 
+        // Umbauplan Post-MVP Punkt 1: eigener Resolver fuer einen optional getrennten
+        // Embedding-Provider, unabhaengig registriert (nicht Teil von ActiveProviderResolver
+        // selbst), weil er ueberall dort gebraucht wird, wo bisher direkt "new
+        // EmbeddingService($chatProvider)" stand — siehe EmbeddingProviderResolver-Docblock.
+        $this->container->set(EmbeddingProviderResolver::class, static function (Container $c): EmbeddingProviderResolver {
+            return new EmbeddingProviderResolver($c->get(ProviderFactory::class));
+        });
+
         $this->container->set(ChatController::class, static function (Container $c): ChatController {
             return new ChatController(
                 $c->get(ConversationRepositoryInterface::class),
@@ -198,6 +207,7 @@ final class Plugin
                 $c->get(DocumentRepositoryInterface::class),
                 $c->get(RateLimiter::class),
                 $c->get(PromptGuard::class),
+                $c->get(EmbeddingProviderResolver::class),
             );
         });
 
@@ -301,6 +311,7 @@ final class Plugin
                 $c->get(VectorStoreInterface::class),
                 $c->get(ActiveProviderResolver::class),
                 $c->get(PdfTextExtractorInterface::class),
+                $c->get(EmbeddingProviderResolver::class),
             );
         });
 
@@ -314,6 +325,7 @@ final class Plugin
                 $c->get(VectorStoreInterface::class),
                 $c->get(ActiveProviderResolver::class),
                 $c->get(PdfTextExtractorInterface::class),
+                $c->get(EmbeddingProviderResolver::class),
             );
         });
     }

@@ -9,6 +9,7 @@ use WPAiSuite\AiCore\Provider\NoActiveProviderException;
 use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
 use WPAiSuite\Knowledge\DocumentIngestionService;
 use WPAiSuite\Knowledge\DocumentRepositoryInterface;
+use WPAiSuite\Knowledge\Embedding\EmbeddingProviderResolver;
 use WPAiSuite\Knowledge\Embedding\EmbeddingService;
 use WPAiSuite\Knowledge\Ingestion\FaqEntry;
 use WPAiSuite\Knowledge\Ingestion\FaqSource;
@@ -60,6 +61,7 @@ final class DocumentsController
         private readonly VectorStoreInterface $vectorStore,
         private readonly ActiveProviderResolver $providerResolver,
         private readonly PdfTextExtractorInterface $pdfExtractor,
+        private readonly EmbeddingProviderResolver $embeddingProviderResolver,
     ) {
     }
 
@@ -108,11 +110,14 @@ final class DocumentsController
             return new \WP_Error('wpais_no_active_provider', $e->getMessage(), ['status' => 503]);
         }
 
+        // Umbauplan Post-MVP Punkt 1: siehe EmbeddingProviderResolver-Docblock.
+        $embeddingProvider = $this->embeddingProviderResolver->resolve() ?? $provider;
+
         $ingestionService = new DocumentIngestionService(
             $this->documents,
             $this->chunker,
             $this->vectorStore,
-            new EmbeddingService($provider),
+            new EmbeddingService($embeddingProvider),
         );
 
         $summary = $ingestionService->ingest($source);
