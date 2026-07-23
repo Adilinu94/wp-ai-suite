@@ -9,6 +9,7 @@ use WPAiSuite\AiCore\Prompt\SystemPromptBuilder;
 use WPAiSuite\AiCore\Provider\Contract\AiProviderInterface;
 use WPAiSuite\AiCore\Provider\Contract\ChatRequest;
 use WPAiSuite\AiCore\Provider\Contract\ToolCall;
+use WPAiSuite\Knowledge\RagQueryBuilder;
 use WPAiSuite\Knowledge\RagServiceInterface;
 use WPAiSuite\Tools\Contract\ToolExecutionContext;
 use WPAiSuite\Tools\ToolRegistry;
@@ -44,6 +45,7 @@ final class ConversationService
         private readonly AiProviderInterface $provider,
         private readonly string $model,
         private readonly RagServiceInterface $ragService,
+        private readonly RagQueryBuilder $ragQueryBuilder,
         private readonly ToolRegistry $toolRegistry,
     ) {
     }
@@ -89,7 +91,9 @@ final class ConversationService
 
     /**
      * Persistiert die User-Nachricht, holt RAG-Kontext (M5: Bauplan Abschnitt 15 —
-     * "Retrieval laeuft vor Prompt-Bau"), ruft dann den Provider in einer Schleife auf (M7:
+     * "Retrieval laeuft vor Prompt-Bau"; seit Umbauplan Post-MVP Punkt 5 mit einer per
+     * RagQueryBuilder aus den letzten Turns angereicherten Query statt nur der aktuellen
+     * Nachricht — siehe dessen Docblock), ruft dann den Provider in einer Schleife auf (M7:
      * Bauplan Abschnitt 8 Tool-Loop) — jede Runde, in der der Provider toolCalls zurueckgibt,
      * wird die Tool-Aufruf-Absicht des Modells UND jedes Tool-Ergebnis als eigene Nachricht
      * persistiert (noetig fuer die naechste Runde, siehe ChatMessage::$toolCalls-Docblock), bis
@@ -104,9 +108,15 @@ final class ConversationService
      */
     public function handleUserMessage(Conversation $conversation, string $userMessage, callable $onToken, ?callable $onSources = null): ChatCompletionResult
     {
+        // Umbauplan Post-MVP Punkt 5: Historie VOR dem Anhaengen der aktuellen Nachricht holen,
+        // damit RagQueryBuilder sauber zwischen "bisherige Turns" und "aktuelle Nachricht"
+        // unterscheiden kann (siehe dessen Docblock) statt den letzten Eintrag der Historie
+        // wieder herausfiltern zu muessen.
+        $priorHistory = $this->conversations->getMessages($conversation->id);
         $this->conversations->appendMessage($conversation->id, new StoredMessage(role: 'user', content: $userMessage));
 
-        $retrieval = $this->ragService->retrieve($userMessage);
+        $retrievalQuery = $this->ragQueryBuilder->fromHistory($priorHistory, $userMessage);
+        $retrieval = $this->ragService->retrieve($retrievalQuery);
 
         if ($onSources !== null) {
             $onSources($retrieval->sources);

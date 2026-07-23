@@ -14,6 +14,7 @@ use WPAiSuite\AiCore\Provider\NoActiveProviderException;
 use WPAiSuite\Knowledge\DocumentRepositoryInterface;
 use WPAiSuite\Knowledge\Embedding\EmbeddingProviderResolver;
 use WPAiSuite\Knowledge\Embedding\EmbeddingService;
+use WPAiSuite\Knowledge\RagQueryBuilder;
 use WPAiSuite\Knowledge\RagService;
 use WPAiSuite\Knowledge\RetrievedSource;
 use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
@@ -168,7 +169,11 @@ final class ChatController
         }
         $toolRegistry = new ToolRegistry($tools);
 
-        $conversationService = new ConversationService($this->conversations, $this->promptBuilder, $provider, $model, $ragService, $toolRegistry);
+        // Umbauplan Post-MVP Punkt 5: RagQueryBuilder ist zustandslos/abhaengigkeitsfrei (siehe
+        // dessen Docblock) — wie WooCommerceProductSearchTool oben deshalb bewusst hier direkt
+        // instanziiert statt zusaetzlich in Plugin.php/den Konstruktor dieser Klasse
+        // aufzunehmen, nur um einen einzigen new-Aufruf zu verschieben.
+        $conversationService = new ConversationService($this->conversations, $this->promptBuilder, $provider, $model, $ragService, new RagQueryBuilder(), $toolRegistry);
 
         $wpUserId = get_current_user_id() ?: null;
 

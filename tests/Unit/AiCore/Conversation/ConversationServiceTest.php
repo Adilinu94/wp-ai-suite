@@ -7,6 +7,7 @@ use WPAiSuite\AiCore\Conversation\ConversationService;
 use WPAiSuite\AiCore\Prompt\SystemPromptBuilder;
 use WPAiSuite\AiCore\Provider\Contract\ChatResponse;
 use WPAiSuite\AiCore\Provider\Contract\ToolCall;
+use WPAiSuite\Knowledge\RagQueryBuilder;
 use WPAiSuite\Knowledge\RetrievalResult;
 use WPAiSuite\Knowledge\RetrievedSource;
 use WPAiSuite\Tests\Unit\AiCore\Conversation\FakeAiProvider;
@@ -27,6 +28,7 @@ beforeEach(function (): void {
         $this->provider,
         'fake-model-v1',
         $this->ragService,
+        new RagQueryBuilder(),
         $this->toolRegistry,
     );
 });
@@ -150,13 +152,24 @@ test('getHistory() returns the messages stored for a conversation', function ():
     expect($this->service->getHistory($conversation))->toHaveCount(2);
 });
 
-test('M5: queries the RAG service with the raw user message', function (): void {
+test('M5: queries the RAG service with the raw user message when there is no prior history', function (): void {
     $conversation = $this->repository->create('tok-1', null);
     $this->provider->queueResponse(new ChatResponse(content: 'Antwort', tokensInput: 1, tokensOutput: 1));
 
     $this->service->handleUserMessage($conversation, 'Was kostet das Produkt?', function (): void {});
 
     expect($this->ragService->receivedQueries)->toBe(['Was kostet das Produkt?']);
+});
+
+test('Umbauplan Punkt 5: a follow-up question is enriched with the prior user message for retrieval', function (): void {
+    $conversation = $this->repository->create('tok-1', null);
+    $this->repository->appendMessage($conversation->id, new WPAiSuite\AiCore\Conversation\StoredMessage('user', 'Was kostet der Versand?'));
+    $this->repository->appendMessage($conversation->id, new WPAiSuite\AiCore\Conversation\StoredMessage('assistant', 'Der Versand kostet 4,90 Euro.'));
+    $this->provider->queueResponse(new ChatResponse(content: 'Antwort', tokensInput: 1, tokensOutput: 1));
+
+    $this->service->handleUserMessage($conversation, 'und wie teuer international?', function (): void {});
+
+    expect($this->ragService->receivedQueries)->toBe(['Was kostet der Versand? und wie teuer international?']);
 });
 
 test('M5: injects retrieved context into the system message sent to the provider', function (): void {
@@ -236,6 +249,7 @@ test('M7: sends the registered tool definitions to the provider', function (): v
         $this->provider,
         'fake-model-v1',
         $this->ragService,
+        new RagQueryBuilder(),
         new ToolRegistry([$tool]),
     );
     $conversation = $this->repository->create('tok-1', null);
@@ -256,6 +270,7 @@ test('M7: a tool call is executed and its result fed back for a second provider 
         $this->provider,
         'fake-model-v1',
         $this->ragService,
+        new RagQueryBuilder(),
         new ToolRegistry([$tool]),
     );
     $conversation = $this->repository->create('tok-1', null);
@@ -280,7 +295,7 @@ test('M7: persists the assistant tool-call intent and the tool result as their o
     $tool = new FakeTool('knowledge_search');
     $tool->queueResult(new ToolResult(success: true, data: ['found' => false]));
     $service = new ConversationService(
-        $this->repository, new SystemPromptBuilder('P'), $this->provider, 'm', $this->ragService, new ToolRegistry([$tool]),
+        $this->repository, new SystemPromptBuilder('P'), $this->provider, 'm', $this->ragService, new RagQueryBuilder(), new ToolRegistry([$tool]),
     );
     $conversation = $this->repository->create('tok-1', null);
 
@@ -312,7 +327,7 @@ test('M7: persists the assistant tool-call intent and the tool result as their o
 test('M7: token usage is summed across all rounds of a tool loop, and logged once per round', function (): void {
     $tool = new FakeTool('knowledge_search');
     $service = new ConversationService(
-        $this->repository, new SystemPromptBuilder('P'), $this->provider, 'm', $this->ragService, new ToolRegistry([$tool]),
+        $this->repository, new SystemPromptBuilder('P'), $this->provider, 'm', $this->ragService, new RagQueryBuilder(), new ToolRegistry([$tool]),
     );
     $conversation = $this->repository->create('tok-1', null);
 
@@ -333,7 +348,7 @@ test('M7: token usage is summed across all rounds of a tool loop, and logged onc
 test('M7: a model that keeps calling tools is forced into a final tools-less round after MAX_TOOL_ITERATIONS', function (): void {
     $tool = new FakeTool('loopy_tool');
     $service = new ConversationService(
-        $this->repository, new SystemPromptBuilder('P'), $this->provider, 'm', $this->ragService, new ToolRegistry([$tool]),
+        $this->repository, new SystemPromptBuilder('P'), $this->provider, 'm', $this->ragService, new RagQueryBuilder(), new ToolRegistry([$tool]),
     );
     $conversation = $this->repository->create('tok-1', null);
 

@@ -67,6 +67,16 @@ durchlaufen (IPv4/IPv6, CIDR-Grenzen, Spoofing ohne Trust, XFF-Ketten, X-Real-IP
 statt nur `php -l`. `ChatController`s IP-Fallback nutzt jetzt den Resolver, Default bleibt
 unveraendert (kein Trust) — Checkbox + Trusted-Proxies-Textarea auf der Einstellungsseite.
 
+**U5 (RAG-Query mit Gespraechskontext):** ebenfalls code-fertig, wie U7 tatsaechlich per PHP-CLI
+verifiziert (`RagQueryBuilder` ist WP-frei — reine String-/Array-Logik ohne WordPress-Aufrufe).
+`ConversationService` holt die Historie jetzt VOR dem Anhaengen der aktuellen Nachricht und
+uebergibt beides an den Builder statt nur die rohe Nachricht an `RagService::retrieve()` zu
+schicken — bewusst kein LLM-Rewrite (kein zusaetzlicher Provider-Call), nur die letzten K=2
+User-Nachrichten + aktuelle, mit Truncation vom Anfang her bei Ueberlaenge. Bestehende
+`ConversationServiceTest.php`-Faelle liefen alle mit derselben Assertion weiter (keine
+Vorgeschichte → Query bleibt die reine aktuelle Nachricht), plus ein neuer Fall fuer den
+angereicherten Fall.
+
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 
 | Frage | Entscheidung |
