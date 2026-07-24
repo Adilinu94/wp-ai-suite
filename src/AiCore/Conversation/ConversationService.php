@@ -11,6 +11,7 @@ use WPAiSuite\AiCore\Provider\Contract\ChatRequest;
 use WPAiSuite\AiCore\Provider\Contract\ToolCall;
 use WPAiSuite\Knowledge\RagQueryBuilder;
 use WPAiSuite\Knowledge\RagServiceInterface;
+use WPAiSuite\Knowledge\RetrievedSource;
 use WPAiSuite\Tools\Contract\ToolExecutionContext;
 use WPAiSuite\Tools\ToolRegistry;
 
@@ -131,6 +132,9 @@ final class ConversationService
         $totalTokensInput = 0;
         $totalTokensOutput = 0;
         $response = null;
+        // Umbauplan Post-MVP Punkt 6: Quellen aus erfolgreichen knowledge_search-Tool-Aufrufen,
+        // gesammelt ueber ALLE Runden des Loops (nicht nur die letzte) — siehe unten.
+        $toolSources = [];
 
         for ($iteration = 0; $iteration <= self::MAX_TOOL_ITERATIONS; $iteration++) {
             $history = $this->conversations->getMessages($conversation->id);
@@ -194,6 +198,21 @@ final class ConversationService
             foreach ($response->toolCalls as $toolCall) {
                 $result = $this->toolRegistry->execute($toolCall->name, $toolCall->arguments, $toolContext);
 
+                // Umbauplan Post-MVP Punkt 6: nur knowledge_search liefert Wissensbasis-Quellen;
+                // andere Tools (z.B. woocommerce_product_search) haben keine "sources" im data-
+                // Array, die Pruefung darauf reicht als Filter statt zusaetzlich auf den
+                // Tool-Namen zu pruefen.
+                if ($result->success && isset($result->data['sources']) && is_array($result->data['sources'])) {
+                    foreach ($result->data['sources'] as $source) {
+                        $toolSources[] = new RetrievedSource(
+                            documentId: (int) ($source['document_id'] ?? 0),
+                            title: (string) ($source['title'] ?? ''),
+                            sourceType: (string) ($source['source_type'] ?? ''),
+                            sourceRef: isset($source['source_ref']) ? (string) $source['source_ref'] : null,
+                        );
+                    }
+                }
+
                 $this->conversations->appendMessage($conversation->id, new StoredMessage(
                     role: 'tool',
                     content: $result->toModelContent(),
@@ -202,12 +221,21 @@ final class ConversationService
             }
         }
 
+        // Umbauplan Post-MVP Punkt 6, Variante A (siehe dortiger Entscheidungs-Tabelle): frueh
+        // gesendete M5-Quellen bleiben unveraendert (oben, vor dem Loop) — Tool-Quellen kommen
+        // als SEPARATES, spaetes Event nach dem Loop dazu, statt serverseitig zu mergen. Das JS
+        // dedupliziert beide Events nach title+url (siehe wpais-chat.js::mergeSources), nicht
+        // diese Klasse hier.
+        if ($toolSources !== [] && $onSources !== null) {
+            $onSources($toolSources);
+        }
+
         return new ChatCompletionResult(
             content: $response->content,
             finishReason: $response->finishReason,
             tokensInput: $totalTokensInput,
             tokensOutput: $totalTokensOutput,
-            sources: $retrieval->sources,
+            sources: [...$retrieval->sources, ...$toolSources],
         );
     }
 

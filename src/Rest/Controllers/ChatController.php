@@ -213,10 +213,16 @@ final class ChatController
     }
 
     /**
-     * M5: "sources"-SSE-Event, gesendet sobald Retrieval abgeschlossen ist (vor dem ersten
-     * "token"-Event). Loest bei source_type="wp_content" den echten Permalink auf — das ist der
-     * einzige Grund, warum diese Uebersetzung hier in der WP-gekoppelten Rest-Schicht passiert
-     * und nicht in RagService (das bleibt WP-frei).
+     * M5: "sources"-SSE-Event, urspruenglich einmalig gesendet sobald das automatische Retrieval
+     * abgeschlossen ist (vor dem ersten "token"-Event). Loest bei source_type="wp_content" den
+     * echten Permalink auf — das ist der einzige Grund, warum diese Uebersetzung hier in der
+     * WP-gekoppelten Rest-Schicht passiert und nicht in RagService (das bleibt WP-frei).
+     *
+     * Seit Umbauplan Post-MVP Punkt 6 kann $onSources ein ZWEITES Mal aufgerufen werden (spaet,
+     * nach dem Tool-Loop, fuer Quellen aus einem knowledge_search-Tool-Aufruf) — diese Methode
+     * selbst bleibt unveraendert (sendet einfach, was sie bekommt), das Zusammenfuehren beider
+     * Events passiert im JS (wpais-chat.js::mergeSources), bewusst nicht hier serverseitig
+     * (siehe ConversationService-Docblock fuer die Begruendung "Variante A").
      *
      * @param RetrievedSource[] $sources
      */

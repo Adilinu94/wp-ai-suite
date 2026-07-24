@@ -197,6 +197,29 @@
 		}
 	}
 
+	/**
+	 * Umbauplan Post-MVP Punkt 6: es koennen jetzt zwei "sources"-Events pro Antwort kommen
+	 * (frueh: automatisches M5-Retrieval, spaet: Treffer aus einem knowledge_search-Tool-Aufruf
+	 * waehrend des Tool-Loops) — mergen statt das erste zu ueberschreiben, sonst verschwinden die
+	 * M5-Quellen sobald das Modell zusaetzlich das Tool nutzt. Dedup nach title+url (wie im
+	 * Umbauplan spezifiziert), erster Treffer gewinnt bei Duplikaten.
+	 */
+	function mergeSources(existing, incoming) {
+		var merged = [];
+		var seen = {};
+
+		existing.concat(incoming).forEach(function (source) {
+			var key = source.title + '|' + (source.url || '');
+			if (seen[key]) {
+				return;
+			}
+			seen[key] = true;
+			merged.push(source);
+		});
+
+		return merged;
+	}
+
 	function initChat(container, widgetId) {
 		var mode = container.dataset.mode || 'inline';
 		var welcome = container.dataset.welcome || __('Hallo! Wie kann ich dir helfen?');
@@ -423,7 +446,7 @@
 								if (parsed.event === 'conversation' && parsed.data.session_token) {
 									persistToken(parsed.data.session_token);
 								} else if (parsed.event === 'sources') {
-									pendingSources = parsed.data.sources || [];
+									pendingSources = mergeSources(pendingSources, parsed.data.sources || []);
 								} else if (parsed.event === 'token') {
 									rawContent += parsed.data.delta;
 									bubble.innerHTML = renderMarkdown(rawContent) + '<span class="wpais-chat__cursor"></span>';
@@ -540,6 +563,7 @@
 			renderMarkdown: renderMarkdown,
 			inline: inline,
 			parseSseEvent: parseSseEvent,
+			mergeSources: mergeSources,
 		};
 	}
 })(typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : this);

@@ -49,7 +49,7 @@ test('execute() reports found=false when retrieval has no context text', functio
         ->and($result->data['found'])->toBeFalse();
 });
 
-test('execute() returns context text and source titles when retrieval finds something', function (): void {
+test('execute() returns context text and full source info when retrieval finds something', function (): void {
     $this->ragService->queueResult(new RetrievalResult(
         contextText: 'Der Versand kostet 4,90 Euro.',
         sources: [new RetrievedSource(1, 'Versandkosten-FAQ', 'faq', 'versand')],
@@ -59,5 +59,13 @@ test('execute() returns context text and source titles when retrieval finds some
 
     expect($result->data['found'])->toBeTrue()
         ->and($result->data['context'])->toBe('Der Versand kostet 4,90 Euro.')
-        ->and($result->data['sources'])->toBe([['title' => 'Versandkosten-FAQ']]);
+        // Umbauplan Post-MVP Punkt 6: document_id/source_type/source_ref zusaetzlich zu title,
+        // damit ConversationService daraus RetrievedSource-Objekte fuer das spaete
+        // sources-SSE-Event rekonstruieren kann (siehe KnowledgeSearchTool-Docblock).
+        ->and($result->data['sources'])->toBe([[
+            'title' => 'Versandkosten-FAQ',
+            'document_id' => 1,
+            'source_type' => 'faq',
+            'source_ref' => 'versand',
+        ]]);
 });

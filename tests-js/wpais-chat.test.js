@@ -26,6 +26,7 @@ const {
 	renderMarkdown,
 	inline,
 	parseSseEvent,
+	mergeSources,
 } = require(path.join(__dirname, '..', 'assets', 'js', 'wpais-chat.js'));
 
 test('escapeHtml escapes all five HTML-relevant characters', () => {
@@ -99,4 +100,41 @@ test('parseSseEvent returns null when there is no data line', () => {
 
 test('parseSseEvent returns null for malformed JSON in the data line', () => {
 	assert.equal(parseSseEvent('data: {not json'), null);
+});
+
+test('mergeSources (Umbauplan Punkt 6) concatenates two empty-overlap source lists', () => {
+	const early = [{ title: 'Versand', url: 'https://example.com/versand' }];
+	const late = [{ title: 'Rueckgabe', url: 'https://example.com/rueckgabe' }];
+	assert.deepEqual(mergeSources(early, late), [
+		{ title: 'Versand', url: 'https://example.com/versand' },
+		{ title: 'Rueckgabe', url: 'https://example.com/rueckgabe' },
+	]);
+});
+
+test('mergeSources drops a duplicate (same title+url) from the second list', () => {
+	const early = [{ title: 'Versand', url: 'https://example.com/versand' }];
+	const late = [{ title: 'Versand', url: 'https://example.com/versand' }, { title: 'Rueckgabe', url: 'https://example.com/rueckgabe' }];
+	assert.deepEqual(mergeSources(early, late), [
+		{ title: 'Versand', url: 'https://example.com/versand' },
+		{ title: 'Rueckgabe', url: 'https://example.com/rueckgabe' },
+	]);
+});
+
+test('mergeSources treats the same title with a different url as distinct (not a duplicate)', () => {
+	const early = [{ title: 'FAQ', url: null }];
+	const late = [{ title: 'FAQ', url: 'https://example.com/faq' }];
+	assert.equal(mergeSources(early, late).length, 2);
+});
+
+test('mergeSources keeps the first occurrence when titles and urls both match', () => {
+	const early = [{ title: 'Versand', url: 'https://example.com/versand' }];
+	const late = [{ title: 'Versand', url: 'https://example.com/versand' }];
+	const result = mergeSources(early, late);
+	assert.equal(result.length, 1);
+	assert.equal(result[0], early[0]);
+});
+
+test('mergeSources handles an empty first (early) list', () => {
+	const late = [{ title: 'Rueckgabe', url: null }];
+	assert.deepEqual(mergeSources([], late), late);
 });

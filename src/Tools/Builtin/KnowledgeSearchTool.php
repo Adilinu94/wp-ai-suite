@@ -73,8 +73,17 @@ final class KnowledgeSearchTool implements ToolInterface
         return new ToolResult(success: true, data: [
             'found' => true,
             'context' => $result->contextText,
+            // Umbauplan Post-MVP Punkt 6: documentId/sourceType/sourceRef zusaetzlich zu title,
+            // damit ConversationService daraus vollwertige RetrievedSource-Objekte bauen kann
+            // (dieselbe Form wie beim automatischen M5-Retrieval) statt nur einer Titel-Liste,
+            // aus der sich z.B. kein Permalink mehr aufloesen liesse.
             'sources' => array_map(
-                static fn ($source): array => ['title' => $source->title],
+                static fn ($source): array => [
+                    'title' => $source->title,
+                    'document_id' => $source->documentId,
+                    'source_type' => $source->sourceType,
+                    'source_ref' => $source->sourceRef,
+                ],
                 $result->sources,
             ),
         ]);

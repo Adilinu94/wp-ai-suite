@@ -77,6 +77,18 @@ User-Nachrichten + aktuelle, mit Truncation vom Anfang her bei Ueberlaenge. Best
 Vorgeschichte → Query bleibt die reine aktuelle Nachricht), plus ein neuer Fall fuer den
 angereicherten Fall.
 
+**U6 (Sources aus Tool-Calls):** ebenfalls code-fertig, Variante A aus dem Umbauplan (separates
+spaetes SSE-Event statt serverseitigem Merge). `KnowledgeSearchTool` liefert jetzt
+document_id/source_type/source_ref zusaetzlich zu title, `ConversationService` sammelt daraus
+`RetrievedSource`-Objekte ueber alle Tool-Runden und ruft `$onSources` ein zweites Mal auf, falls
+welche gefunden wurden. `wpais-chat.js` hatte einen echten Bug: das zweite sources-Event haette
+das erste (M5-)Event komplett ueberschrieben statt zu mergen — beim tatsaechlichen Ausfuehren der
+JS-Tests aufgefallen (nicht nur `node --check`), gefixt mit einer neuen `mergeSources()`-Funktion
+(Dedup nach title+url). Dabei zusaetzlich einen Scope-Fehler in der ersten Fassung gefunden und
+behoben (Funktion war faelschlich innerhalb von initChat() statt auf oberster IIFE-Ebene
+definiert — module.exports haette sie nicht gesehen). Alle 19 JS-Tests (14 bestehende + 5 neue)
+tatsaechlich mit `node --test` durchlaufen, nicht nur geschrieben.
+
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 
 | Frage | Entscheidung |

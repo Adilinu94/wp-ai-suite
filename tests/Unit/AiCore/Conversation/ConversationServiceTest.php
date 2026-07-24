@@ -291,6 +291,55 @@ test('M7: a tool call is executed and its result fed back for a second provider 
         ->and($result->content)->toBe('Der Versand kostet 4,90 Euro.');
 });
 
+test('Umbauplan Punkt 6: sources from a successful knowledge_search tool call trigger a second onSources call', function (): void {
+    $tool = new FakeTool('knowledge_search');
+    $tool->queueResult(new ToolResult(success: true, data: [
+        'found' => true,
+        'context' => 'Rueckgabe ist innerhalb 14 Tagen moeglich.',
+        'sources' => [['title' => 'Rueckgabe-FAQ', 'document_id' => 7, 'source_type' => 'faq', 'source_ref' => 'rueckgabe']],
+    ]));
+    $service = new ConversationService(
+        $this->repository,
+        new SystemPromptBuilder('Test-System-Prompt'),
+        $this->provider,
+        'fake-model-v1',
+        $this->ragService,
+        new RagQueryBuilder(),
+        new ToolRegistry([$tool]),
+    );
+    $conversation = $this->repository->create('tok-1', null);
+
+    $this->provider->queueResponse(new ChatResponse(
+        content: '',
+        tokensInput: 10,
+        tokensOutput: 5,
+        toolCalls: [new ToolCall('call_1', 'knowledge_search', ['query' => 'Rueckgabe'])],
+        finishReason: 'tool_calls',
+    ));
+    $this->provider->queueResponse(new ChatResponse(content: 'Ja, 14 Tage Rueckgaberecht.', tokensInput: 20, tokensOutput: 8));
+
+    $sourcesEvents = [];
+
+    $result = $service->handleUserMessage(
+        $conversation,
+        'Kann ich das zurueckgeben?',
+        function (): void {},
+        function (array $sources) use (&$sourcesEvents): void {
+            $sourcesEvents[] = $sources;
+        },
+    );
+
+    // Erstes Event: leeres automatisches M5-Retrieval (FakeRagService liefert per Default keine
+    // Treffer). Zweites Event: genau die eine Quelle aus dem Tool-Aufruf.
+    expect($sourcesEvents)->toHaveCount(2)
+        ->and($sourcesEvents[0])->toBe([])
+        ->and($sourcesEvents[1])->toHaveCount(1)
+        ->and($sourcesEvents[1][0])->toBeInstanceOf(RetrievedSource::class)
+        ->and($sourcesEvents[1][0]->title)->toBe('Rueckgabe-FAQ')
+        ->and($result->sources)->toHaveCount(1)
+        ->and($result->sources[0]->sourceRef)->toBe('rueckgabe');
+});
+
 test('M7: persists the assistant tool-call intent and the tool result as their own history rows', function (): void {
     $tool = new FakeTool('knowledge_search');
     $tool->queueResult(new ToolResult(success: true, data: ['found' => false]));
