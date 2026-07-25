@@ -17,6 +17,7 @@ use WPAiSuite\Knowledge\Ingestion\KnowledgeSourceInterface;
 use WPAiSuite\Knowledge\Ingestion\PdfFileReference;
 use WPAiSuite\Knowledge\Ingestion\PdfSource;
 use WPAiSuite\Knowledge\Ingestion\PdfTextExtractorInterface;
+use WPAiSuite\Knowledge\Ingestion\PdfUploadValidator;
 use WPAiSuite\Knowledge\Ingestion\WordPressContentSource;
 use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
 
@@ -214,6 +215,15 @@ final class KnowledgeBasePage
 
         if (!isset($_FILES['pdf_file']) || !is_array($_FILES['pdf_file']) || (int) $_FILES['pdf_file']['error'] !== UPLOAD_ERR_OK) {
             $this->redirectWithNotice(__('PDF-Upload fehlgeschlagen (keine Datei erhalten).', 'wp-ai-suite'), true);
+        }
+
+        // Umbauplan Post-MVP Punkt 8: Endung/MIME/Groesse VOR media_handle_upload pruefen — die
+        // bisherige clientseitige accept="application/pdf" im Formular ist nur ein Hinweis fuer
+        // den Dateidialog, keine echte Absicherung (siehe PdfUploadValidator-Docblock).
+        $validationError = (new PdfUploadValidator())->validate($_FILES['pdf_file']);
+
+        if ($validationError !== null) {
+            $this->redirectWithNotice($validationError, true);
         }
 
         require_once ABSPATH . 'wp-admin/includes/image.php';

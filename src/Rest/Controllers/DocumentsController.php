@@ -17,6 +17,7 @@ use WPAiSuite\Knowledge\Ingestion\KnowledgeSourceInterface;
 use WPAiSuite\Knowledge\Ingestion\PdfFileReference;
 use WPAiSuite\Knowledge\Ingestion\PdfSource;
 use WPAiSuite\Knowledge\Ingestion\PdfTextExtractorInterface;
+use WPAiSuite\Knowledge\Ingestion\PdfUploadValidator;
 use WPAiSuite\Knowledge\Ingestion\WordPressContentSource;
 use WPAiSuite\Knowledge\VectorStore\VectorStoreInterface;
 
@@ -157,6 +158,7 @@ final class DocumentsController
         }
 
         $files = [];
+        $validator = new PdfUploadValidator();
 
         foreach ($attachmentIds as $attachmentId) {
             $attachmentId = (int) $attachmentId;
@@ -169,6 +171,25 @@ final class DocumentsController
 
             $title = get_the_title($attachmentId);
             $title = $title !== '' ? $title : sprintf('PDF #%d', $attachmentId);
+
+            // Umbauplan Post-MVP Punkt 8: dieselbe Pruefung wie beim Formular-Upload
+            // (KnowledgeBasePage), hier aus dem bestehenden Mediathek-Anhang rekonstruiert statt
+            // aus $_FILES — Endung/MIME/Groesse koennen sich seit dem urspruenglichen Upload
+            // durch diesen Anhang theoretisch trotzdem geaendert haben (z.B. Datei extern
+            // ersetzt), daher hier nochmal statt der REST-Route blind zu vertrauen.
+            $validationError = $validator->validate([
+                'name' => wp_basename($filePath),
+                'tmp_name' => $filePath,
+                'size' => $filePath !== '' && file_exists($filePath) ? filesize($filePath) : 0,
+            ]);
+
+            if ($validationError !== null) {
+                return new \WP_Error(
+                    'wpais_invalid_pdf',
+                    sprintf('%s (%s)', $validationError, $title),
+                    ['status' => 400],
+                );
+            }
 
             $files[] = new PdfFileReference((string) $attachmentId, $title, $filePath);
         }

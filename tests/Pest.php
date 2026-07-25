@@ -39,3 +39,16 @@ if (!function_exists('esc_attr')) {
         return htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }
+
+/*
+| Umbauplan Post-MVP Punkt 8: PdfUploadValidator ist ansonsten WP-frei (siehe dessen Docblock),
+| baut seine deutschen Fehlermeldungen aber ueber __() statt hartkodierter Strings (Konsistenz
+| mit dem Rest der Codebase, wo jeder nutzersichtbare Text i18n-faehig ist) — derselbe Grund wie
+| bei esc_attr() oben, nur fuer Uebersetzung statt Escaping.
+*/
+if (!function_exists('__')) {
+    function __(string $text, string $domain = 'default'): string
+    {
+        return $text;
+    }
+}

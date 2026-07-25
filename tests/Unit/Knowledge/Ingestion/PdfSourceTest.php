@@ -60,7 +60,7 @@ test('a failing file is reported via extractionError and does not stop the other
         ->and($documents[1]->extractionError)->toBeNull();
 });
 
-test('a PDF with no extractable text (e.g. a pure image scan) is not treated as an error', function (): void {
+test('Umbauplan Punkt 8: a PDF with no extractable text (e.g. a pure image scan) is now treated as a failure, not a silent empty success', function (): void {
     $extractor = new FakePdfTextExtractor(textByPath: ['/uploads/scan.pdf' => '   ']);
 
     $source = new PdfSource(
@@ -72,5 +72,5 @@ test('a PDF with no extractable text (e.g. a pure image scan) is not treated as 
 
     expect($documents)->toHaveCount(1);
     expect($documents[0]->content)->toBe('');
-    expect($documents[0]->extractionError)->toBeNull();
+    expect($documents[0]->extractionError)->not->toBeNull();
 });

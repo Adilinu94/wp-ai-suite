@@ -18,6 +18,13 @@ namespace WPAiSuite\Knowledge\Ingestion;
  * mit abbrechen), sondern als RawDocument mit gesetztem $extractionError weitergereicht — siehe
  * RawDocument-Docblock. Ein kaputtes PDF blockiert damit die anderen hochgeladenen PDFs nicht,
  * konsistent mit dem in M4 etablierten Prinzip.
+ *
+ * Umbauplan Post-MVP Punkt 8: ein PDF OHNE extrahierbaren Text (z.B. ein reiner Bild-Scan ohne
+ * Texterkennung/OCR) wird seitdem GENAUSO behandelt wie ein Extraktionsfehler — vorher (M6) lief
+ * das als "processed" mit 0 Chunks durch, was fuer Adi im Wissensbasis-Dashboard unauffaellig
+ * blieb (kein Fehler sichtbar), obwohl das Dokument fuer RAG faktisch nutzlos war. `failed` +
+ * klare Fehlermeldung ist ehrlicher und nutzt den seit M8 bestehenden Fehler-Hinweis in der
+ * Dokumentliste (KnowledgeBasePage), ohne dass dort etwas Neues gebaut werden musste.
  */
 final class PdfSource implements KnowledgeSourceInterface
 {
@@ -54,11 +61,22 @@ final class PdfSource implements KnowledgeSourceInterface
             // Lesetext ohne mehrfache Leerzeichen/Zeilenumbrueche, keine PDF-Layout-Artefakte.
             $normalized = trim((string) preg_replace('/\s+/', ' ', $text));
 
-            // Bewusst KEIN "continue" bei leerem $normalized (anders als FaqSource/
-            // WordPressContentSource): ein textleeres PDF (z.B. reines Bild-Scan ohne Textebene)
-            // ist kein Extraktionsfehler, sondern ein valides Ergebnis mit null Chunks — deckt sich
-            // mit dem in DocumentIngestionServiceTest bereits abgesicherten Verhalten ("a document
-            // with only whitespace content is still marked processed, with zero chunks").
+            if ($normalized === '') {
+                // Umbauplan Post-MVP Punkt 8: kein "continue"/kein leises RawDocument mehr (siehe
+                // Klassen-Docblock) — ein leerer Text ist ab jetzt ein Fehlerfall, kein valides
+                // Nullergebnis, damit er in DocumentIngestionService::ingestOne() denselben Pfad
+                // wie ein echter Extraktionsfehler nimmt (markFailed + sichtbare error_message).
+                yield new RawDocument(
+                    sourceType: $this->getType(),
+                    sourceRef: $file->ref,
+                    title: $file->title,
+                    content: '',
+                    extractionError: __('PDF enthaelt keinen extrahierbaren Text (vermutlich ein Bild-Scan ohne Texterkennung/OCR).', 'wp-ai-suite'),
+                );
+
+                continue;
+            }
+
             yield new RawDocument(
                 sourceType: $this->getType(),
                 sourceRef: $file->ref,

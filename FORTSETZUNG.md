@@ -89,6 +89,20 @@ behoben (Funktion war faelschlich innerhalb von initChat() statt auf oberster II
 definiert — module.exports haette sie nicht gesehen). Alle 19 JS-Tests (14 bestehende + 5 neue)
 tatsaechlich mit `node --test` durchlaufen, nicht nur geschrieben.
 
+**U8 (PDF-Upload haerten):** ebenfalls code-fertig, mit echten temporaeren Dateien verifiziert
+(eine echte Mini-PDF + eine als .pdf umbenannte Textdatei — genau das DoD-Szenario). Neu:
+`PdfUploadValidator` prueft Endung, echten Dateiinhalt per `finfo` (nicht den vom Client
+behaupteten Content-Type) und optional eine Maximalgroesse — von `KnowledgeBasePage` (Formular-
+Upload) UND `DocumentsController` (REST, aus dem Mediathek-Anhang rekonstruiert) gemeinsam
+genutzt. Verhaltensaenderung in `PdfSource`: ein PDF ohne extrahierbaren Text (reiner Bild-Scan)
+gilt jetzt als `failed` statt als `processed` mit 0 Chunks — nutzt den seit M8 bestehenden
+Fehler-Hinweis in der Dokumentliste automatisch mit, dafuer musste nichts Neues in der UI gebaut
+werden. Bestehender PdfSourceTest-Fall entsprechend umgedreht; DocumentIngestionServiceTests
+eigener Fall (wp_content, nicht PDF) bewusst unveraendert gelassen, da dort eine echte leere Seite
+weiterhin kein Fehler ist. tests/Pest.php um einen `__()`-Stub ergaenzt (nach demselben Muster wie
+der bestehende `esc_attr()`-Stub), da PdfUploadValidator/PdfSource jetzt uebersetzte
+Fehlermeldungen bauen.
+
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 
 | Frage | Entscheidung |
