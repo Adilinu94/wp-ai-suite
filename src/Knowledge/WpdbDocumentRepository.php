@@ -136,23 +136,54 @@ final class WpdbDocumentRepository implements DocumentRepositoryInterface
     }
 
     /**
-     * M10 (Wissensbasis-Admin-UI): neueste zuerst, damit gerade hochgeladene/zuletzt
-     * fehlgeschlagene Dokumente oben stehen. $limit ist bewusst hart begrenzt (kein
-     * Pagination-UI in Phase 1, siehe FORTSETZUNG.md) statt unbegrenzt alle Zeilen zu holen.
-     *
-     * @return StoredDocument[]
+     * Umbauplan Post-MVP Punkt 9: loest listAll() ab. WHERE-Klausel wird aus den gesetzten
+     * Kriterien zusammengebaut (nur die tatsaechlich gesetzten Filter landen als Platzhalter im
+     * SQL, siehe findBySourceTypeAndRef() fuer denselben Ansatz bei optionalem source_ref) —
+     * $wpdb->prepare() darf nur mit Platzhaltern aufgerufen werden, die auch im SQL vorkommen,
+     * deshalb der Zweig ohne Platzhalter fuer den ungefilterten COUNT(*)-Fall.
      */
-    public function listAll(int $limit = 200): array
+    public function list(DocumentListCriteria $criteria): DocumentListPage
     {
+        $table = $this->documentsTable();
+        $where = [];
+        $params = [];
+
+        if ($criteria->status !== null) {
+            $where[] = 'status = %s';
+            $params[] = $criteria->status;
+        }
+        if ($criteria->sourceType !== null) {
+            $where[] = 'source_type = %s';
+            $params[] = $criteria->sourceType;
+        }
+        if ($criteria->titleSearch !== null && $criteria->titleSearch !== '') {
+            $where[] = 'title LIKE %s';
+            $params[] = '%' . $this->wpdb->esc_like($criteria->titleSearch) . '%';
+        }
+
+        $whereSql = $where === [] ? '' : ' WHERE ' . implode(' AND ', $where);
+
+        $total = (int) ($params === []
+            ? $this->wpdb->get_var("SELECT COUNT(*) FROM {$table}{$whereSql}")
+            : $this->wpdb->get_var($this->wpdb->prepare("SELECT COUNT(*) FROM {$table}{$whereSql}", ...$params)));
+
+        $perPage = max(1, $criteria->perPage);
+        $page = max(1, $criteria->page);
+
         $rows = $this->wpdb->get_results(
             $this->wpdb->prepare(
-                "SELECT * FROM {$this->documentsTable()} ORDER BY updated_at DESC LIMIT %d",
-                $limit,
+                "SELECT * FROM {$table}{$whereSql} ORDER BY updated_at DESC LIMIT %d OFFSET %d",
+                ...[...$params, $perPage, ($page - 1) * $perPage],
             ),
             ARRAY_A,
         );
 
-        return array_map(fn (array $row): StoredDocument => $this->hydrate($row), is_array($rows) ? $rows : []);
+        return new DocumentListPage(
+            array_map(fn (array $row): StoredDocument => $this->hydrate($row), is_array($rows) ? $rows : []),
+            $total,
+            $page,
+            $perPage,
+        );
     }
 
     public function addChunk(int $documentId, int $chunkIndex, string $content, ?int $tokenCount): int

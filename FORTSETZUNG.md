@@ -59,6 +59,25 @@ hcm.local oder eine vergleichbare laufende Instanz.
 U2 (Elementor-QA) bleibt aus demselben Grund unangetastet: braucht Browser-Zugriff auf
 hcm.local, dafuer existiert aktuell kein verbundener Connector.
 
+**U9 (Wissensbasis-UX: Pagination, Filter, Auto-Ref):** ebenfalls code-fertig. Neu:
+`DocumentListCriteria`/`DocumentListPage` (WP-frei) + `DocumentRepositoryInterface::list()`
+ersetzt das bisherige `listAll()` (hartes 200er-Limit, keine Filter) — implementiert in
+`WpdbDocumentRepository` (prepared SQL, WHERE nur mit tatsaechlich gesetzten Filtern) und in
+`FakeDocumentRepository` (In-Memory-Aequivalent fuer Unit-Tests). `KnowledgeBasePage` hat jetzt
+eine Filterleiste (Status/Typ/Titel-Volltext + "Nur Fehler"-Schnellfilter) und einen Pager.
+`AutoRefResolver` (neu, WP-frei) macht das Ref-Feld im FAQ/Freitext-Formular optional: bleibt es
+leer, wird aus dem Titel geslugt (`sanitize_title()` bleibt im Page-Handler, nicht im Resolver,
+damit der Resolver WP-frei testbar bleibt); Kollisionsregel: gleicher Slug + gleicher Titel = kein
+Konflikt, sondern derselbe Eintrag wird aktualisiert (DoD "re-updatebar mit gleichem
+Auto-Slug"), gleicher Slug + anderer Titel = echte Kollision -> Suffix `-2`, `-3`, ...
+**Tatsaechlich per PHP-CLI-Harness verifiziert** (nicht nur `php -l`): alle 6 AutoRefResolver-
+Faelle plus Status-/Typ-/Titelfilter und Pagination-Mathematik ueber `FakeDocumentRepository`,
+alle gruen. Pest-Unit-Tests dafuer geschrieben (`AutoRefResolverTest.php`,
+`DocumentListingTest.php`), koennen hier mangels Composer/Packagist nicht selbst laufen (bekannte
+Einschraenkung, siehe unten). **Nicht verifizierbar in dieser Sandbox:** echter Pest-Lauf, der
+manuelle hcm.local-DoD-Check (>20 echte Dokumente im Browser, Pager/Filter-Klicks) — dafuer
+braucht es einen verbundenen Connector wie bei U2.
+
 **U7 (Rate-Limit hinter Proxy/CDN):** ebenfalls code-fertig. `ClientIpResolver` (neu) ist die
 einzige Klasse in diesem Umbau, die tatsaechlich WP-frei unit-testbar ist (nimmt `$_SERVER`,
 trust-Flag und Proxy-Liste als Parameter statt selbst `get_option()`/Superglobals zu lesen) —
@@ -647,16 +666,15 @@ das ganze Konto treffen wie der aktuelle.
 
 **Stand bei Chat-Ende:** M0–M10 fertig auf main (siehe "Stand" oben, weiterhin gueltig). Seit
 diesem Dokument zusaetzlich: **`UMBAUPLAN-POST-MVP.md`** (Repo-Root) mit 10 priorisierten
-Post-MVP-Punkten (U1–U10, Wellen A–E) — **U1, U4, U5, U6, U7, U8 sind bereits umgesetzt und
-gepusht** (jeweils eigener Commit, Details in den Commit-Messages und im "Post-MVP"-Abschnitt
-oben). **U3 (Async-Ingestion) ist in diesem Chat fertig geschrieben und mit diesem Commit
-gepusht** — Details unten. **U2 (Elementor-QA)** bleibt blockiert: braucht Browser-Zugriff auf
-`hcm.local`, dafuer existiert kein verbundener Connector. **U9 (Wissensbasis-UX) ist noch nicht
-begonnen.** U10 nur teilweise (Build-Skript offen).
+Post-MVP-Punkten (U1–U10, Wellen A–E) — **U1, U3, U4, U5, U6, U7, U8, U9 sind bereits umgesetzt
+und gepusht** (jeweils eigener Commit, Details in den Commit-Messages und im
+"Post-MVP"-Abschnitt oben). **U2 (Elementor-QA)** bleibt blockiert: braucht Browser-Zugriff auf
+`hcm.local`, dafuer existiert kein verbundener Connector. **U10** nur teilweise (Build-Skript
+offen).
 
 **Fuer den neuen Chat reicht:** `UMBAUPLAN-POST-MVP.md` + dieses Dokument hochladen/verlinken,
-dann "Mach weiter mit U9" (oder was sonst gewuenscht ist). Der neue Chat sollte NICHT bei U1–U8
-nochmal anfangen — die sind fertig.
+dann "Mach weiter mit U10" (oder was sonst gewuenscht ist — U2 braucht zusaetzlich einen
+hcm.local-Connector). Der neue Chat sollte NICHT bei U1–U9 nochmal anfangen — die sind fertig.
 
 **U3 (Async-Ingestion) — was genau gebaut wurde:**
 - `src/Jobs/IngestionDispatcherInterface.php`, `IngestionDispatchResult.php`,

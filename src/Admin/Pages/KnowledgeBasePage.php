@@ -9,9 +9,12 @@ use WPAiSuite\AiCore\Provider\NoActiveProviderException;
 use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
 use WPAiSuite\Jobs\ActionSchedulerIngestionDispatcher;
 use WPAiSuite\Knowledge\DocumentIngestionService;
+use WPAiSuite\Knowledge\DocumentListCriteria;
+use WPAiSuite\Knowledge\DocumentListPage;
 use WPAiSuite\Knowledge\DocumentRepositoryInterface;
 use WPAiSuite\Knowledge\Embedding\EmbeddingProviderResolver;
 use WPAiSuite\Knowledge\Embedding\EmbeddingService;
+use WPAiSuite\Knowledge\Ingestion\AutoRefResolver;
 use WPAiSuite\Knowledge\Ingestion\FaqEntry;
 use WPAiSuite\Knowledge\Ingestion\FaqSource;
 use WPAiSuite\Knowledge\Ingestion\KnowledgeSourceInterface;
@@ -82,10 +85,37 @@ final class KnowledgeBasePage
 
         echo '<div class="wrap"><h1>' . esc_html__('Wissensbasis', 'wp-ai-suite') . '</h1>';
         $this->renderNotice();
-        $this->renderDocumentsTable();
+        $criteria = $this->currentCriteria();
+        $this->renderDocumentsTable($this->documents->list($criteria), $criteria);
         $this->renderUploadPdfForm();
         $this->renderAddEntryForm();
         echo '</div>';
+    }
+
+    /**
+     * Umbauplan Post-MVP Punkt 9: liest Filter/Seite aus der GET-Anfrage der Filterleiste
+     * (renderFilterBar()) bzw. den Pager-Links (pagerUrl()). "wpais_paged" statt "page", weil
+     * "page" bereits der WP-Admin-Query-Var fuer die Menue-Seite selbst ist (self::SLUG).
+     */
+    private function currentCriteria(): DocumentListCriteria
+    {
+        $status = isset($_GET['wpais_status']) ? sanitize_key(wp_unslash((string) $_GET['wpais_status'])) : '';
+        $sourceType = isset($_GET['wpais_type']) ? sanitize_key(wp_unslash((string) $_GET['wpais_type'])) : '';
+        $search = isset($_GET['wpais_q']) ? sanitize_text_field(wp_unslash((string) $_GET['wpais_q'])) : '';
+        $page = isset($_GET['wpais_paged']) ? max(1, (int) $_GET['wpais_paged']) : 1;
+
+        return new DocumentListCriteria(
+            page: $page,
+            perPage: 20,
+            status: in_array($status, ['pending', 'processed', 'failed'], true) ? $status : null,
+            sourceType: $sourceType !== '' ? $sourceType : null,
+            titleSearch: $search !== '' ? $search : null,
+        );
+    }
+
+    private function hasActiveFilter(DocumentListCriteria $criteria): bool
+    {
+        return $criteria->status !== null || $criteria->sourceType !== null || $criteria->titleSearch !== null;
     }
 
     private function renderNotice(): void
@@ -104,14 +134,16 @@ final class KnowledgeBasePage
         );
     }
 
-    private function renderDocumentsTable(): void
+    private function renderDocumentsTable(DocumentListPage $page, DocumentListCriteria $criteria): void
     {
-        $documents = $this->documents->listAll();
-
         echo '<h2>' . esc_html__('Dokumente', 'wp-ai-suite') . '</h2>';
+        $this->renderFilterBar($criteria);
 
-        if ($documents === []) {
-            echo '<p>' . esc_html__('Noch keine Dokumente in der Wissensbasis.', 'wp-ai-suite') . '</p>';
+        if ($page->items === []) {
+            $message = $this->hasActiveFilter($criteria)
+                ? __('Keine Dokumente entsprechen diesem Filter.', 'wp-ai-suite')
+                : __('Noch keine Dokumente in der Wissensbasis.', 'wp-ai-suite');
+            echo '<p>' . esc_html($message) . '</p>';
 
             return;
         }
@@ -128,7 +160,7 @@ final class KnowledgeBasePage
         }
         echo '</tr></thead><tbody>';
 
-        foreach ($documents as $document) {
+        foreach ($page->items as $document) {
             echo '<tr>';
             echo '<td>' . esc_html($document->title) . '</td>';
             echo '<td>' . esc_html($document->sourceType) . '</td>';
@@ -143,6 +175,88 @@ final class KnowledgeBasePage
         }
 
         echo '</tbody></table>';
+        $this->renderPager($page, $criteria);
+    }
+
+    /**
+     * Umbauplan Post-MVP Punkt 9, Ziel 2+4: Status/Typ als Dropdown, Titel als Volltextsuche,
+     * plus "Nur Fehler"-Schnellfilter als direkter Link (ohne erst das Dropdown umstellen und
+     * absenden zu muessen).
+     */
+    private function renderFilterBar(DocumentListCriteria $criteria): void
+    {
+        echo '<form method="get" action="' . esc_url(admin_url('admin.php')) . '" style="margin:1em 0;">';
+        echo '<input type="hidden" name="page" value="' . esc_attr(self::SLUG) . '" />';
+
+        echo '<select name="wpais_status">';
+        echo '<option value="">' . esc_html__('Alle Status', 'wp-ai-suite') . '</option>';
+        foreach ([
+            'pending' => __('Ausstehend', 'wp-ai-suite'),
+            'processed' => __('Verarbeitet', 'wp-ai-suite'),
+            'failed' => __('Fehlgeschlagen', 'wp-ai-suite'),
+        ] as $value => $label) {
+            printf('<option value="%s"%s>%s</option>', esc_attr($value), selected($criteria->status, $value, false), esc_html($label));
+        }
+        echo '</select> ';
+
+        echo '<select name="wpais_type">';
+        echo '<option value="">' . esc_html__('Alle Typen', 'wp-ai-suite') . '</option>';
+        foreach (['wp_content' => 'WordPress', 'pdf' => 'PDF', 'faq' => 'FAQ', 'custom_text' => __('Freitext', 'wp-ai-suite')] as $value => $label) {
+            printf('<option value="%s"%s>%s</option>', esc_attr($value), selected($criteria->sourceType, $value, false), esc_html($label));
+        }
+        echo '</select> ';
+
+        echo '<input type="search" name="wpais_q" value="' . esc_attr((string) $criteria->titleSearch) . '" placeholder="' . esc_attr__('Titel durchsuchen…', 'wp-ai-suite') . '" /> ';
+
+        submit_button(__('Filtern', 'wp-ai-suite'), 'secondary', '', false);
+
+        if ($criteria->status !== 'failed') {
+            $failedUrl = add_query_arg(['page' => self::SLUG, 'wpais_status' => 'failed'], admin_url('admin.php'));
+            echo ' <a href="' . esc_url($failedUrl) . '" class="button">' . esc_html__('Nur Fehler', 'wp-ai-suite') . '</a>';
+        }
+
+        if ($this->hasActiveFilter($criteria)) {
+            echo ' <a href="' . esc_url(admin_url('admin.php?page=' . self::SLUG)) . '">' . esc_html__('Filter zurücksetzen', 'wp-ai-suite') . '</a>';
+        }
+
+        echo '</form>';
+    }
+
+    private function renderPager(DocumentListPage $page, DocumentListCriteria $criteria): void
+    {
+        $totalPages = $page->totalPages();
+
+        if ($totalPages <= 1) {
+            return;
+        }
+
+        echo '<p class="tablenav-pages">';
+        printf(
+            esc_html__('Seite %1$d von %2$d (%3$d Dokumente gesamt)', 'wp-ai-suite'),
+            $page->page,
+            $totalPages,
+            $page->total,
+        );
+
+        if ($page->page > 1) {
+            echo ' <a class="button" href="' . esc_url($this->pagerUrl($criteria, $page->page - 1)) . '">' . esc_html__('« Zurück', 'wp-ai-suite') . '</a>';
+        }
+        if ($page->page < $totalPages) {
+            echo ' <a class="button" href="' . esc_url($this->pagerUrl($criteria, $page->page + 1)) . '">' . esc_html__('Weiter »', 'wp-ai-suite') . '</a>';
+        }
+
+        echo '</p>';
+    }
+
+    private function pagerUrl(DocumentListCriteria $criteria, int $targetPage): string
+    {
+        return add_query_arg(array_filter([
+            'page' => self::SLUG,
+            'wpais_status' => $criteria->status,
+            'wpais_type' => $criteria->sourceType,
+            'wpais_q' => $criteria->titleSearch,
+            'wpais_paged' => $targetPage > 1 ? $targetPage : null,
+        ]), admin_url('admin.php'));
     }
 
     private function renderStatusBadge(string $status): string
@@ -197,7 +311,7 @@ final class KnowledgeBasePage
         echo '</select></td></tr>';
 
         echo '<tr><th scope="row"><label for="wpais_entry_ref">' . esc_html__('Schlüssel (Ref)', 'wp-ai-suite') . '</label></th><td>';
-        echo '<input type="text" class="regular-text" name="ref" id="wpais_entry_ref" required placeholder="z.B. versandkosten" /></td></tr>';
+        echo '<input type="text" class="regular-text" name="ref" id="wpais_entry_ref" placeholder="' . esc_attr__('leer lassen für automatischen Schlüssel aus dem Titel', 'wp-ai-suite') . '" /></td></tr>';
 
         echo '<tr><th scope="row"><label for="wpais_entry_title">' . esc_html__('Frage / Titel', 'wp-ai-suite') . '</label></th><td>';
         echo '<input type="text" class="regular-text" name="entry_title" id="wpais_entry_title" required /></td></tr>';
@@ -256,8 +370,14 @@ final class KnowledgeBasePage
         $title = sanitize_text_field(wp_unslash((string) ($_POST['entry_title'] ?? '')));
         $content = sanitize_textarea_field(wp_unslash((string) ($_POST['entry_content'] ?? '')));
 
-        if ($ref === '' || $title === '' || $content === '') {
-            $this->redirectWithNotice(__('Bitte Schlüssel, Frage/Titel und Antwort/Text ausfüllen.', 'wp-ai-suite'), true);
+        if ($title === '' || $content === '') {
+            $this->redirectWithNotice(__('Bitte Frage/Titel und Antwort/Text ausfüllen.', 'wp-ai-suite'), true);
+        }
+
+        if ($ref === '') {
+            // Umbauplan Post-MVP Punkt 9: ref optional — Server vergibt einen stabilen Slug aus
+            // dem Titel (siehe AutoRefResolver-Docblock fuer die Kollisions-/Re-Update-Regel).
+            $ref = (new AutoRefResolver($this->documents))->resolve($entryType, sanitize_title($title), $title);
         }
 
         $source = new FaqSource($entryType, [new FaqEntry($ref, $title, $content)]);

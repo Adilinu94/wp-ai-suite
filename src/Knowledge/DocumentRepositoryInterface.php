@@ -34,10 +34,9 @@ interface DocumentRepositoryInterface
     public function addChunk(int $documentId, int $chunkIndex, string $content, ?int $tokenCount): int;
 
     /**
-     * M10 (Wissensbasis-Admin-UI, Bauplan Abschnitt 11: "Liste aller wpais_documents mit
-     * Status"). Neueste zuerst.
-     *
-     * @return StoredDocument[]
+     * Umbauplan Post-MVP Punkt 9: ersetzt das bisherige listAll() (hartes 200er-Limit, kein
+     * Filter) durch echte Pagination + Filter (status/source_type/Titel-Volltext). Neueste
+     * zuerst, wie zuvor.
      */
-    public function listAll(int $limit = 200): array;
+    public function list(DocumentListCriteria $criteria): DocumentListPage;
 }

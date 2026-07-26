@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WPAiSuite\Tests\Unit\Knowledge;
 
+use WPAiSuite\Knowledge\DocumentListCriteria;
+use WPAiSuite\Knowledge\DocumentListPage;
 use WPAiSuite\Knowledge\DocumentRepositoryInterface;
 use WPAiSuite\Knowledge\StoredDocument;
 
@@ -100,11 +102,33 @@ final class FakeDocumentRepository implements DocumentRepositoryInterface
         return $chunkId;
     }
 
-    public function listAll(int $limit = 200): array
+    public function list(DocumentListCriteria $criteria): DocumentListPage
     {
         $documents = array_values($this->documents);
         usort($documents, static fn (StoredDocument $a, StoredDocument $b): int => ($b->updatedAt ?? new \DateTimeImmutable('@0')) <=> ($a->updatedAt ?? new \DateTimeImmutable('@0')));
 
-        return array_slice($documents, 0, $limit);
+        $filtered = array_values(array_filter($documents, static function (StoredDocument $d) use ($criteria): bool {
+            if ($criteria->status !== null && $d->status !== $criteria->status) {
+                return false;
+            }
+            if ($criteria->sourceType !== null && $d->sourceType !== $criteria->sourceType) {
+                return false;
+            }
+            if ($criteria->titleSearch !== null && $criteria->titleSearch !== '' && !str_contains(strtolower($d->title), strtolower($criteria->titleSearch))) {
+                return false;
+            }
+
+            return true;
+        }));
+
+        $perPage = max(1, $criteria->perPage);
+        $page = max(1, $criteria->page);
+
+        return new DocumentListPage(
+            array_slice($filtered, ($page - 1) * $perPage, $perPage),
+            count($filtered),
+            $page,
+            $perPage,
+        );
     }
 }
