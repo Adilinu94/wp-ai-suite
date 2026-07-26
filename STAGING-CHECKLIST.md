@@ -78,6 +78,35 @@ stehen, damit sich beides nicht auseinanderentwickeln kann.
 - [ ] Logs-Seite zeigt plausible Zeilen (Provider/Modell/Tokens) nach ein paar Chat-Nachrichten,
       Gesamtsumme wirkt realistisch.
 
+## Umbauplan Post-MVP (U1, U3–U9)
+
+Bereits umgesetzte Punkte aus `UMBAUPLAN-POST-MVP.md` — Details/Hintergrund zu jedem Punkt in
+`FORTSETZUNG.md`, Abschnitt "Post-MVP". U2 fehlt hier bewusst (weiterhin blockiert, kein
+hcm.local-Connector), U10 ist dieser Release-Durchlauf selbst.
+
+- [ ] **U1/U4** — Separaten Embedding-Provider unter "Einstellungen" konfigurieren (abweichend
+      vom Chat-Provider), Ingestion auslösen: sollte den Embedding-Provider nutzen, nicht den
+      Chat-Provider. Verbindungstest-Button (Shortcode-Box) für Chat- und Embedding-Provider
+      einzeln prüfen — beide Zustände (OK/Fehler) unterscheiden sich korrekt.
+- [ ] **U3** — Ingestion mit mehr Dokumenten als dem sync-max-docs-Limit (Default 20) auslösen:
+      der Rest läuft über Action Scheduler im Hintergrund und erscheint kurz danach in der
+      Dokumentliste als `processed`.
+- [ ] **U5** — Eine Folgefrage stellen (z.B. "und wie teuer?" nach einer Versandkosten-Frage):
+      RAG-Retrieval sollte den Kontext der vorherigen Frage berücksichtigen.
+- [ ] **U6** — Chat-Anfrage, die `knowledge_search` auslöst: Quellen erscheinen im Frontend
+      korrekt, auch bei mehreren Tool-Runden hintereinander (nicht nur die letzte Runde sichtbar).
+- [ ] **U7** — Falls hinter Proxy/CDN: "Proxy vertrauen" + Trusted-Proxies-Liste konfigurieren,
+      Rate-Limiting über eine echte Anfrage durch den Proxy testen — IP sollte die des Clients
+      sein, nicht die des Proxys.
+- [ ] **U8** — Eine als `.pdf` umbenannte Textdatei hochladen: wird abgelehnt. Ein reines
+      Bild-Scan-PDF (kein extrahierbarer Text) hochladen: landet als `failed`, nicht als leer
+      `processed`.
+- [ ] **U9** — Wissensbasis-Seite: Status-/Typ-Filter und Titelsuche einzeln durchklicken (nur
+      passende Dokumente sichtbar), "Nur Fehler"-Schnellfilter zeigt ausschließlich
+      Fehlgeschlagene. Bei >20 Dokumenten: Pager funktioniert. FAQ-Eintrag OHNE Schlüssel (Ref
+      leer lassen) speichern — bekommt automatisch einen Slug aus dem Titel; denselben Titel
+      erneut ohne Ref speichern aktualisiert denselben Eintrag statt einen zweiten anzulegen.
+
 ## Danach
 
 - [ ] `uninstall.php` NICHT auf dem eigentlichen Staging-System testen (loescht alle Daten

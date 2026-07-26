@@ -127,6 +127,31 @@ im neuen Chat weitermachen" ganz unten, inklusive der bewussten Vereinfachungen 
 composer.json-Abhaengigkeit, PDF-Extraktion selbst nicht deferred) und was fuer eine echte
 AS-Garantie noch fehlt.
 
+**U10 (M11 Packaging-Check):** teilweise. Neu: `bin/build-release.sh` — reproduzierbarer
+Release-Build (`composer install --no-dev` → `composer prefix-namespaces` → Strauss-Bridge-Check
+via `class_exists` → `git archive HEAD` als sauberer Staging-Ordner → `tests/`, `tests-js/`,
+`phpunit.xml`, `bin/strauss.phar` raus, `vendor/`+`vendor-scoped/` rein → ZIP mit
+`wp-ai-suite/`-Wurzelordner). Die Archiv-/Exclude-/ZIP-Logik selbst **tatsaechlich per Dry-Run
+verifiziert** (git archive + Fake-vendor-Ordner + echtes `zip`, ZIP-Inhalt gegenpruefen) — nicht
+nur gelesen. **Nicht ausfuehrbar hier:** die `composer install`-Zeile selbst, da Packagist nicht
+in den erlaubten Netzwerk-Domains dieser Sandbox steht (nur npm/pip/cargo/GitHub) — muss auf
+`solar.local` (oder einem anderen Host mit echtem Composer-Zugriff) laufen, danach liefert das
+Skript ein installierbares ZIP ohne Composer auf dem Zielserver.
+`STAGING-CHECKLIST.md` um einen Abschnitt "Umbauplan Post-MVP (U1, U3–U9)" ergaenzt (Punkt-10-
+Vorgabe: "Punkte 1–9, die schon umgesetzt sind, dort mit abdecken") — vorher fehlte das komplett,
+die Checkliste deckte nur M2–M10 ab. `uninstall.php` gegen alle tatsaechlich im Code verwendeten
+Options-Keys gegengeprueft (inkl. der von U1/U7 neu eingefuehrten) — vollstaendig, keine Aenderung
+noetig. Plugin-Header-Version (`WPAIS_VERSION` + Kommentar-Header) bereits konsistent auf 0.1.0,
+README traegt keine eigene Versionsnummer. Zusaetzlich (im Plan als "optional/spaeter" markiert,
+aber ohne Live-Infrastruktur umsetzbar): `.github/workflows/unit-tests.yml` — `composer install &&
+vendor/bin/pest --testsuite=Unit` bei jedem PR/Push auf main, kein Deploy-Key noetig (nur Checkout
++ Testlauf). **Bewusst NICHT gemacht:** kein Git-Tag `v0.1.0-beta` und keine Versionsbump auf
+"-beta" — beides gehoert laut DoD zusammen mit einer tatsaechlich abgehakten
+`STAGING-CHECKLIST.md`, das waere vor der echten hcm.local/gfr-industriemontagen.de-Verprobung
+irrefuehrend. **Verbleibt fuer den naechsten Chat/Adi selbst:** `composer install` +
+`build-release.sh` auf `solar.local` laufen lassen, Staging-Checkliste komplett auf einer echten
+Instanz durchgehen, danach taggen.
+
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 
 | Frage | Entscheidung |
@@ -669,12 +694,17 @@ diesem Dokument zusaetzlich: **`UMBAUPLAN-POST-MVP.md`** (Repo-Root) mit 10 prio
 Post-MVP-Punkten (U1–U10, Wellen A–E) — **U1, U3, U4, U5, U6, U7, U8, U9 sind bereits umgesetzt
 und gepusht** (jeweils eigener Commit, Details in den Commit-Messages und im
 "Post-MVP"-Abschnitt oben). **U2 (Elementor-QA)** bleibt blockiert: braucht Browser-Zugriff auf
-`hcm.local`, dafuer existiert kein verbundener Connector. **U10** nur teilweise (Build-Skript
-offen).
+`hcm.local`, dafuer existiert kein verbundener Connector. **U10** ist jetzt der einzige noch
+offene Punkt, und zwar nur noch der Teil, der echten Composer/Packagist- bzw. Browser-Zugriff
+braucht (siehe U10-Absatz oben fuer das Detail, was schon fertig ist: Build-Skript,
+Staging-Checkliste, CI-Workflow, uninstall.php/Version bereits verifiziert).
 
 **Fuer den neuen Chat reicht:** `UMBAUPLAN-POST-MVP.md` + dieses Dokument hochladen/verlinken,
-dann "Mach weiter mit U10" (oder was sonst gewuenscht ist — U2 braucht zusaetzlich einen
-hcm.local-Connector). Der neue Chat sollte NICHT bei U1–U9 nochmal anfangen — die sind fertig.
+dann "Mach weiter mit U10" nur noch sinnvoll, wenn dabei entweder ein hcm.local/
+gfr-industriemontagen.de-Connector zur Verfuegung steht ODER Adi `bin/build-release.sh` +
+`STAGING-CHECKLIST.md` selbst auf `solar.local` durchgeht und die Ergebnisse zurückmeldet — ohne
+das eine oder andere kann kein neuer Chat hier weiterkommen (reine Sandbox-Grenze, kein
+Codier-Rest mehr offen). Der neue Chat sollte NICHT bei U1–U9 nochmal anfangen — die sind fertig.
 
 **U3 (Async-Ingestion) — was genau gebaut wurde:**
 - `src/Jobs/IngestionDispatcherInterface.php`, `IngestionDispatchResult.php`,
