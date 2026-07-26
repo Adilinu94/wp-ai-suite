@@ -6,6 +6,7 @@ namespace WPAiSuite\Rest\Controllers;
 
 use WPAiSuite\AiCore\Provider\ActiveProviderResolver;
 use WPAiSuite\AiCore\Provider\NoActiveProviderException;
+use WPAiSuite\Jobs\ActionSchedulerIngestionDispatcher;
 use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
 use WPAiSuite\Knowledge\DocumentIngestionService;
 use WPAiSuite\Knowledge\DocumentRepositoryInterface;
@@ -121,13 +122,21 @@ final class DocumentsController
             new EmbeddingService($embeddingProvider),
         );
 
-        $summary = $ingestionService->ingest($source);
+        // Umbauplan Post-MVP Punkt 3: siehe ActionSchedulerIngestionDispatcher-Docblock. Gleicher
+        // Filter-Name wie in KnowledgeBasePage, damit ein Schwellwert fuer beide Aufrufwege
+        // (Formular UND REST) einheitlich gilt statt zwei getrennte Einstellungen zu brauchen.
+        $dispatcher = new ActionSchedulerIngestionDispatcher(
+            $ingestionService,
+            (int) apply_filters('wpais_ingest_sync_max_docs', 20),
+        );
+        $result = $dispatcher->dispatch($source);
 
         return new \WP_REST_Response([
-            'processed' => $summary->processed,
-            'skipped_unchanged' => $summary->skippedUnchanged,
-            'failed' => $summary->failed,
-            'errors' => $summary->errors,
+            'processed' => $result->summary->processed,
+            'skipped_unchanged' => $result->summary->skippedUnchanged,
+            'failed' => $result->summary->failed,
+            'errors' => $result->summary->errors,
+            'queued' => $result->queued,
         ]);
     }
 

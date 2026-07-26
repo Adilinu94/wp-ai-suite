@@ -103,6 +103,11 @@ weiterhin kein Fehler ist. tests/Pest.php um einen `__()`-Stub ergaenzt (nach de
 der bestehende `esc_attr()`-Stub), da PdfUploadValidator/PdfSource jetzt uebersetzte
 Fehlermeldungen bauen.
 
+**U3 (Async-Ingestion):** ebenfalls code-fertig — siehe den ausfuehrlichen Stand im Abschnitt "Wie
+im neuen Chat weitermachen" ganz unten, inklusive der bewussten Vereinfachungen (keine neue
+composer.json-Abhaengigkeit, PDF-Extraktion selbst nicht deferred) und was fuer eine echte
+AS-Garantie noch fehlt.
+
 ## Bindende Grundsatzentscheidungen (bereits final, nicht neu diskutieren)
 
 | Frage | Entscheidung |
@@ -640,17 +645,54 @@ das ganze Konto treffen wie der aktuelle.
 
 ## Wie im neuen Chat weitermachen
 
-**Fuer den laufenden Vorgang (siehe ganz oben):** sicherstellen, dass Desktop Commander UND
-`novamira-test4-nick-webde` im neuen Chat als Connector verbunden sind, `BAUPLAN-PHASE1-MVP.md` +
-dieses Dokument hochladen, dann reicht: "Mach weiter mit dem Novamira-Deployment-Test auf test4"
-— der Abschnitt ganz oben traegt den kompletten Kontext dafuer.
+**Stand bei Chat-Ende:** M0–M10 fertig auf main (siehe "Stand" oben, weiterhin gueltig). Seit
+diesem Dokument zusaetzlich: **`UMBAUPLAN-POST-MVP.md`** (Repo-Root) mit 10 priorisierten
+Post-MVP-Punkten (U1–U10, Wellen A–E) — **U1, U4, U5, U6, U7, U8 sind bereits umgesetzt und
+gepusht** (jeweils eigener Commit, Details in den Commit-Messages und im "Post-MVP"-Abschnitt
+oben). **U3 (Async-Ingestion) ist in diesem Chat fertig geschrieben und mit diesem Commit
+gepusht** — Details unten. **U2 (Elementor-QA)** bleibt blockiert: braucht Browser-Zugriff auf
+`hcm.local`, dafuer existiert kein verbundener Connector. **U9 (Wissensbasis-UX) ist noch nicht
+begonnen.** U10 nur teilweise (Build-Skript offen).
 
-**Falls der laufende Vorgang stattdessen abgebrochen/erledigt ist** und regulaer an M11
-weitergearbeitet werden soll: `BAUPLAN-PHASE1-MVP.md` und dieses Dokument hochladen oder
-verlinken, dann reicht "Fahre mit M11 (Beta-Release) fort" — **mit dem Hinweis, dass M11 anders
-ist als M6–M10** (siehe "Stand" oben): kein neuer Feature-Code, sondern
-`composer install && vendor/bin/pest` lokal laufen lassen, Strauss-Vendor-Prefixing einrichten,
-und auf `gfr-industriemontagen.de` als Staging verproben — Dinge, die eine Sandbox-Session nicht
-selbst ausfuehren kann. Der neue Chat sollte das explizit wissen, bevor er einfach "mach weiter"
-wie bei M6–M10 interpretiert.
+**Fuer den neuen Chat reicht:** `UMBAUPLAN-POST-MVP.md` + dieses Dokument hochladen/verlinken,
+dann "Mach weiter mit U9" (oder was sonst gewuenscht ist). Der neue Chat sollte NICHT bei U1–U8
+nochmal anfangen — die sind fertig.
+
+**U3 (Async-Ingestion) — was genau gebaut wurde:**
+- `src/Jobs/IngestionDispatcherInterface.php`, `IngestionDispatchResult.php`,
+  `SyncIngestionDispatcher.php`, `ActionSchedulerIngestionDispatcher.php`, `IngestionJob.php`
+  (neu). `DocumentIngestionService::ingestOne()` von private auf public gestellt, `ingestMany()`
+  aus `ingest()` extrahiert (Refactor, unveraendertes Verhalten).
+- `ActionSchedulerIngestionDispatcher` verarbeitet synchron, wenn eine Quelle ≤
+  `apply_filters('wpais_ingest_sync_max_docs', 20)` Dokumente hat ODER Action Scheduler nicht
+  verfuegbar ist (`function_exists('as_schedule_single_action')` — DoD-konform: "ohne AS:
+  degradieren auf Sync"), sonst ein Job pro Dokument.
+- **Bewusst KEINE neue composer.json-Abhaengigkeit** (`woocommerce/action-scheduler`)
+  hinzugefuegt — diese Sandbox kann kein `composer require`/`update` ausfuehren (kein
+  Packagist-Zugriff, bekannte Einschraenkung siehe unten). Funktioniert automatisch, sobald
+  WooCommerce aktiv ist (bringt AS mit) oder AS anderweitig separat installiert ist. **Falls du
+  eine garantierte eigene AS-Kopie willst** (nicht von WooCommerce abhaengig), muss
+  `"woocommerce/action-scheduler": "^3.7"` noch von Hand zu composer.json hinzugefuegt und
+  `composer update` lokal/auf hcm.local ausgefuehrt werden — das kann kein Sandbox-Chat selbst.
+- **Bewusste Vereinfachung:** PDF-Extraktion selbst wird NICHT deferred (nur Chunking/Embedding),
+  siehe Docblock in `ActionSchedulerIngestionDispatcher`. Das getestete DoD-Szenario ("≥50
+  WP-Seiten") betrifft `WordPressContentSource`, nicht PDF.
+- `DocumentsController` + `KnowledgeBasePage` nutzen jetzt den Dispatcher statt direkt
+  `DocumentIngestionService::ingest()` — REST-Response hat ein neues `queued`-Feld, Admin-Redirect
+  zeigt "N Dokument(e) werden im Hintergrund verarbeitet" wenn `queued > 0`.
+- Tests: `IngestionJobTest.php` (Serialisierung, WP-frei), `ActionSchedulerIngestionDispatcherTest`
+  (mit einem neuen `as_schedule_single_action`-Stub in `tests/Pest.php`, der Aufrufe in
+  `$GLOBALS['wpais_test_scheduled_actions']` aufzeichnet — dadurch ist auch der Einplanungs-Pfad
+  testbar, nicht nur der Sync-Rueckfall).
+- **Nicht verifizierbar in dieser Sandbox:** echter Pest-Lauf (kein Composer/Packagist), der
+  manuelle hcm.local-Check aus dem DoD (50+ echte Seiten, Timeout-Verhalten, AS-Action-Liste).
+
+**Bekannte, wiederkehrende Einschraenkungen dieser Art von Sandbox-Chat** (gilt vermutlich auch
+im neuen Chat, nicht nur in diesem): kein Composer/Packagist-Zugriff (PHP-CLI selbst laesst sich
+per `apt-get install php8.3-cli` nachinstallieren und funktioniert fuer Syntax-Checks/echte
+Verifikation von WP-freien Klassen, siehe z.B. `ClientIpResolver`/`RagQueryBuilder`/
+`PdfUploadValidator`/`ActionSchedulerIngestionDispatcher` diese Session — nur `composer
+install`/`vendor/bin/pest` gehen nicht). Kein Browser-Zugriff auf `hcm.local` oder `test4` ohne
+einen im Chat verbundenen MCP-Connector (`test4` war zeitweise verbunden, dann getrennt und nicht
+wieder verfuegbar — Status im neuen Chat unklar, ggf. neu pruefen/verbinden).
 

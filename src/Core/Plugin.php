@@ -16,6 +16,7 @@ use WPAiSuite\AiCore\Provider\ActiveProviderResolver;
 use WPAiSuite\AiCore\Provider\ProviderFactory;
 use WPAiSuite\Core\Container\Container;
 use WPAiSuite\Frontend\ChatWidget\AssetManager;
+use WPAiSuite\Jobs\IngestionJob;
 use WPAiSuite\Frontend\ChatWidget\ChatWidgetRenderer;
 use WPAiSuite\Frontend\ChatWidget\Shortcode;
 use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
@@ -348,12 +349,24 @@ final class Plugin
                 $c->get(EmbeddingProviderResolver::class),
             );
         });
+        // Umbauplan Post-MVP Punkt 3: Action-Scheduler-Hook-Callback, siehe IngestionJob-Docblock
+        // fuer die "erst in handle() aufloesen"-Begruendung.
+        $this->container->set(IngestionJob::class, static function (Container $c): IngestionJob {
+            return new IngestionJob(
+                $c->get(DocumentRepositoryInterface::class),
+                $c->get(ChunkerInterface::class),
+                $c->get(VectorStoreInterface::class),
+                $c->get(ActiveProviderResolver::class),
+                $c->get(EmbeddingProviderResolver::class),
+            );
+        });
     }
 
     private function bootKnowledgeServices(): void
     {
         $this->container->get(DocumentsController::class)->register();
         $this->container->get(KnowledgeBasePage::class)->register();
+        $this->container->get(IngestionJob::class)->register();
     }
 
     /**

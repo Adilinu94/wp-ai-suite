@@ -52,3 +52,26 @@ if (!function_exists('__')) {
         return $text;
     }
 }
+
+/*
+| Umbauplan Post-MVP Punkt 3: ActionSchedulerIngestionDispatcher::isAvailable() prueft
+| function_exists('as_schedule_single_action') — ohne diesen Stub waere die Funktion in der
+| Testumgebung nie vorhanden, isAvailable() also IMMER false, und der eigentliche
+| Einplanungs-Pfad (statt des Sync-Rueckfalls) liesse sich nie testen. Zeichnet Aufrufe in
+| $GLOBALS['wpais_test_scheduled_actions'] auf, damit Tests darauf assertieren koennen — Reset
+| passiert im jeweiligen Test selbst (Konvention: beforeEach setzt das Array leer), nicht hier
+| global, damit dieser Stub keine versteckte Test-Reihenfolge-Abhaengigkeit einfuehrt.
+*/
+if (!function_exists('as_schedule_single_action')) {
+    function as_schedule_single_action($timestamp, $hook, $args = [], $group = ''): int
+    {
+        $GLOBALS['wpais_test_scheduled_actions'][] = [
+            'timestamp' => $timestamp,
+            'hook' => $hook,
+            'args' => $args,
+            'group' => $group,
+        ];
+
+        return count($GLOBALS['wpais_test_scheduled_actions']);
+    }
+}

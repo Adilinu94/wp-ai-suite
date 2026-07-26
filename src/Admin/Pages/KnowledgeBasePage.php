@@ -7,6 +7,7 @@ namespace WPAiSuite\Admin\Pages;
 use WPAiSuite\AiCore\Provider\ActiveProviderResolver;
 use WPAiSuite\AiCore\Provider\NoActiveProviderException;
 use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
+use WPAiSuite\Jobs\ActionSchedulerIngestionDispatcher;
 use WPAiSuite\Knowledge\DocumentIngestionService;
 use WPAiSuite\Knowledge\DocumentRepositoryInterface;
 use WPAiSuite\Knowledge\Embedding\EmbeddingProviderResolver;
@@ -319,10 +320,30 @@ final class KnowledgeBasePage
             new EmbeddingService($embeddingProvider),
         );
 
-        $summary = $service->ingest($source);
+        // Umbauplan Post-MVP Punkt 3: syncMaxDocs per Filter statt neuer Admin-Option — Adi kann
+        // ihn bei Bedarf in einem mu-plugin/functions.php ueberschreiben, ohne dass dafuer ein
+        // eigenes UI-Feld noetig war (siehe ActionSchedulerIngestionDispatcher-Docblock).
+        $dispatcher = new ActionSchedulerIngestionDispatcher(
+            $service,
+            (int) apply_filters('wpais_ingest_sync_max_docs', 20),
+        );
+        $result = $dispatcher->dispatch($source);
 
-        if ($summary->failed > 0) {
-            $this->redirectWithNotice(implode(' ', $summary->errors), true);
+        if ($result->summary->failed > 0) {
+            $this->redirectWithNotice(implode(' ', $result->summary->errors), true);
+
+            return;
+        }
+
+        if ($result->queued > 0) {
+            $this->redirectWithNotice(
+                sprintf(
+                    /* translators: %d: Anzahl der im Hintergrund eingeplanten Dokumente */
+                    __('%d Dokument(e) werden im Hintergrund verarbeitet und erscheinen in Kuerze in der Liste.', 'wp-ai-suite'),
+                    $result->queued,
+                ),
+                false,
+            );
 
             return;
         }

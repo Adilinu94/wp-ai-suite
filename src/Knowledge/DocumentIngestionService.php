@@ -44,12 +44,25 @@ final class DocumentIngestionService
 
     public function ingest(KnowledgeSourceInterface $source): IngestionSummary
     {
+        return $this->ingestMany($source->fetch());
+    }
+
+    /**
+     * Umbauplan Post-MVP Punkt 3: aus ingest() extrahiert, damit ActionSchedulerIngestionDispatcher
+     * dieselbe Zaehl-/Fehlerbehandlungslogik fuer eine bereits materialisierte Teilmenge von
+     * RawDocuments wiederverwenden kann (z.B. den unter dem Schwellwert liegenden Sync-Rest einer
+     * Quelle), ohne sie zu duplizieren.
+     *
+     * @param iterable<RawDocument> $rawDocuments
+     */
+    public function ingestMany(iterable $rawDocuments): IngestionSummary
+    {
         $processed = 0;
         $skippedUnchanged = 0;
         $failed = 0;
         $errors = [];
 
-        foreach ($source->fetch() as $rawDocument) {
+        foreach ($rawDocuments as $rawDocument) {
             try {
                 if ($this->ingestOne($rawDocument)) {
                     $processed++;
@@ -66,11 +79,16 @@ final class DocumentIngestionService
     }
 
     /**
+     * Umbauplan Post-MVP Punkt 3: war private, jetzt public — IngestionJob (der
+     * Action-Scheduler-Callback) verarbeitet genau EIN wiederhergestelltes RawDocument pro
+     * Hintergrund-Job und braucht dafuer direkten Zugriff, ohne den Umweg ueber eine komplette
+     * KnowledgeSourceInterface-Implementierung nur fuer ein einzelnes Dokument.
+     *
      * @return bool true wenn verarbeitet, false wenn unveraendert uebersprungen.
      * @throws Throwable bei jedem Fehlschlag (auch bei $rawDocument->extractionError, M6) — wird
-     *     von ingest()'s Try/Catch abgefangen, siehe RawDocument::$extractionError-Docblock.
+     *     von ingestMany()'s Try/Catch abgefangen, siehe RawDocument::$extractionError-Docblock.
      */
-    private function ingestOne(RawDocument $rawDocument): bool
+    public function ingestOne(RawDocument $rawDocument): bool
     {
         if ($rawDocument->extractionError !== null) {
             // M6: Quelle (z.B. PdfSource) konnte den Inhalt nicht extrahieren. Trotzdem eine
