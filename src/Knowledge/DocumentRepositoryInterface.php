@@ -30,6 +30,15 @@ interface DocumentRepositoryInterface
     /** Loescht alle bisherigen Chunk-Zeilen eines Dokuments (vor Re-Chunking bei geaenderten Inhalten). */
     public function deleteChunks(int $documentId): void;
 
+    /**
+     * Verbesserung Punkt 1: loescht die Dokument-Zeile selbst unwiderruflich. Loescht NICHT
+     * automatisch Chunks/Vector-Store-Eintraege — Aufrufer (KnowledgeBasePage) orchestriert die
+     * vollstaendige Loeschung ueber deleteChunks() + VectorStoreInterface::deleteByDocument() +
+     * delete(), analog dazu, wie DocumentIngestionService dieselben drei Ports schon fuer
+     * Re-Ingestion koordiniert.
+     */
+    public function delete(int $documentId): void;
+
     /** @return int Neue chunks.id (wird an VectorStoreInterface::upsert() als chunkId weitergereicht). */
     public function addChunk(int $documentId, int $chunkIndex, string $content, ?int $tokenCount): int;
 

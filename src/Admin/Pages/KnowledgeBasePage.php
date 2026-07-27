@@ -8,6 +8,7 @@ use WPAiSuite\AiCore\Provider\ActiveProviderResolver;
 use WPAiSuite\AiCore\Provider\NoActiveProviderException;
 use WPAiSuite\Knowledge\Chunking\ChunkerInterface;
 use WPAiSuite\Jobs\ActionSchedulerIngestionDispatcher;
+use WPAiSuite\Jobs\IngestionDispatchResult;
 use WPAiSuite\Knowledge\DocumentIngestionService;
 use WPAiSuite\Knowledge\DocumentListCriteria;
 use WPAiSuite\Knowledge\DocumentListPage;
@@ -75,6 +76,8 @@ final class KnowledgeBasePage
         add_action('admin_post_wpais_kb_upload_pdf', [$this, 'handleUploadPdf']);
         add_action('admin_post_wpais_kb_add_entry', [$this, 'handleAddEntry']);
         add_action('admin_post_wpais_kb_reindex', [$this, 'handleReindex']);
+        add_action('admin_post_wpais_kb_delete', [$this, 'handleDelete']);
+        add_action('admin_post_wpais_kb_bulk_action', [$this, 'handleBulkAction']);
     }
 
     public function renderPage(): void
@@ -148,7 +151,23 @@ final class KnowledgeBasePage
             return;
         }
 
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
+        wp_nonce_field(self::NONCE_ACTION);
+        echo '<input type="hidden" name="action" value="wpais_kb_bulk_action" />';
+
+        echo '<div class="tablenav top"><div class="alignleft actions">';
+        echo '<select name="bulk_action">';
+        echo '<option value="">' . esc_html__('Mit Auswahl…', 'wp-ai-suite') . '</option>';
+        echo '<option value="reindex">' . esc_html__('Neu indexieren (nur WordPress-Inhalte/PDF)', 'wp-ai-suite') . '</option>';
+        echo '<option value="delete">' . esc_html__('Löschen', 'wp-ai-suite') . '</option>';
+        echo '</select> ';
+        submit_button(__('Anwenden', 'wp-ai-suite'), 'secondary', '', false, [
+            'onclick' => "return confirm('" . esc_js(__('Ausgewaehlte Aktion wirklich auf alle markierten Dokumente anwenden?', 'wp-ai-suite')) . "');",
+        ]);
+        echo '</div></div>';
+
         echo '<table class="wp-list-table widefat fixed striped"><thead><tr>';
+        echo '<td class="manage-column column-cb check-column"><input type="checkbox" class="wpais-kb-select-all" onclick="var f=this.form,cbs=f.querySelectorAll(&quot;input[name=\'document_ids[]\']&quot;);for(var i=0;i<cbs.length;i++){cbs[i].checked=this.checked;}" /></td>';
         foreach ([
             __('Titel', 'wp-ai-suite'),
             __('Typ', 'wp-ai-suite'),
@@ -162,6 +181,7 @@ final class KnowledgeBasePage
 
         foreach ($page->items as $document) {
             echo '<tr>';
+            echo '<th scope="row" class="check-column"><input type="checkbox" name="document_ids[]" value="' . esc_attr((string) $document->id) . '" /></th>';
             echo '<td>' . esc_html($document->title) . '</td>';
             echo '<td>' . esc_html($document->sourceType) . '</td>';
             echo '<td>' . $this->renderStatusBadge($document->status);
@@ -170,12 +190,13 @@ final class KnowledgeBasePage
             }
             echo '</td>';
             echo '<td>' . esc_html($document->updatedAt?->format('Y-m-d H:i') ?? '—') . '</td>';
-            echo '<td>' . $this->renderReindexAction($document->id, $document->sourceType) . '</td>';
+            echo '<td>' . $this->renderReindexAction($document->id, $document->sourceType) . ' ' . $this->renderDeleteAction($document->id) . '</td>';
             echo '</tr>';
         }
 
         echo '</tbody></table>';
         $this->renderPager($page, $criteria);
+        echo '</form>';
     }
 
     /**
@@ -282,6 +303,27 @@ final class KnowledgeBasePage
             : __('Neu indexieren', 'wp-ai-suite');
 
         return sprintf('<a href="%s" class="button button-small">%s</a>', esc_url($url), esc_html($label));
+    }
+
+    private function renderDeleteAction(int $documentId): string
+    {
+        $url = wp_nonce_url(
+            admin_url('admin-post.php?action=wpais_kb_delete&document_id=' . $documentId),
+            self::NONCE_ACTION,
+        );
+
+        // Bewusst KEINE Interpolation von $title in den onclick-JS-String: ein Dokumenttitel
+        // kann Anführungszeichen enthalten (z.B. ein WP-Seitentitel), die sich mit esc_attr()
+        // allein nicht sicher in einen verschachtelten JS-String-Literal einbetten liessen, ohne
+        // das umschliessende onclick-Attribut zu zerbrechen. Eine generische Bestaetigung ist
+        // dafuer die einfachere, robuste Loesung (title steht ohnehin schon in derselben
+        // Tabellenzeile sichtbar).
+        return sprintf(
+            '<a href="%s" class="button button-small button-link-delete" onclick="return confirm(\'%s\');">%s</a>',
+            esc_url($url),
+            esc_js(__('Dieses Dokument wirklich unwiderruflich loeschen?', 'wp-ai-suite')),
+            esc_html__('Löschen', 'wp-ai-suite'),
+        );
     }
 
     private function renderUploadPdfForm(): void
@@ -420,34 +462,133 @@ final class KnowledgeBasePage
         $this->ingestAndRedirect($source, sprintf(__('"%s" neu indexiert.', 'wp-ai-suite'), $document->title));
     }
 
-    private function ingestAndRedirect(KnowledgeSourceInterface $source, string $successMessage): void
+    /** Verbesserung Punkt 1: Dokument-Zeile + Chunks + Vector-Store-Eintraege loeschen. */
+    public function handleDelete(): void
     {
-        try {
-            [$provider, ] = $this->providerResolver->resolve();
-        } catch (NoActiveProviderException $e) {
-            $this->redirectWithNotice($e->getMessage(), true);
+        $this->assertRequestAllowed();
+
+        $documentId = (int) ($_GET['document_id'] ?? 0);
+        $document = $this->documents->findById($documentId);
+
+        if ($document === null) {
+            $this->redirectWithNotice(__('Dokument nicht gefunden.', 'wp-ai-suite'), true);
 
             return;
         }
 
-        // Umbauplan Post-MVP Punkt 1: siehe EmbeddingProviderResolver-Docblock.
-        $embeddingProvider = $this->embeddingProviderResolver->resolve() ?? $provider;
+        $this->deleteDocument($documentId);
+        $this->redirectWithNotice(sprintf(__('"%s" geloescht.', 'wp-ai-suite'), $document->title), false);
+    }
 
-        $service = new DocumentIngestionService(
-            $this->documents,
-            $this->chunker,
-            $this->vectorStore,
-            new EmbeddingService($embeddingProvider),
-        );
+    /**
+     * Verbesserung Punkt 3: Mehrfachauswahl aus der Dokumentliste — "loeschen" laeuft direkt
+     * pro ID, "neu indexieren" gruppiert die ausgewaehlten wp_content/pdf-Dokumente in JEWEILS
+     * EINE Quelle (ueber den in Verbesserung Punkt 2 ergaenzten $postIds-Filter von
+     * WordPressContentSource) statt pro Zeile einen eigenen (bei wp_content: kompletten!)
+     * Re-Sync auszuloesen.
+     */
+    public function handleBulkAction(): void
+    {
+        $this->assertRequestAllowed();
 
-        // Umbauplan Post-MVP Punkt 3: syncMaxDocs per Filter statt neuer Admin-Option — Adi kann
-        // ihn bei Bedarf in einem mu-plugin/functions.php ueberschreiben, ohne dass dafuer ein
-        // eigenes UI-Feld noetig war (siehe ActionSchedulerIngestionDispatcher-Docblock).
-        $dispatcher = new ActionSchedulerIngestionDispatcher(
-            $service,
-            (int) apply_filters('wpais_ingest_sync_max_docs', 20),
-        );
-        $result = $dispatcher->dispatch($source);
+        $action = sanitize_key(wp_unslash((string) ($_POST['bulk_action'] ?? '')));
+        $documentIds = array_values(array_unique(array_filter(array_map('intval', (array) ($_POST['document_ids'] ?? [])))));
+
+        if ($documentIds === []) {
+            $this->redirectWithNotice(__('Keine Dokumente ausgewaehlt.', 'wp-ai-suite'), true);
+
+            return;
+        }
+
+        if ($action === 'delete') {
+            foreach ($documentIds as $documentId) {
+                $this->deleteDocument($documentId);
+            }
+            $this->redirectWithNotice(sprintf(__('%d Dokument(e) geloescht.', 'wp-ai-suite'), count($documentIds)), false);
+
+            return;
+        }
+
+        if ($action === 'reindex') {
+            $this->bulkReindex($documentIds);
+
+            return;
+        }
+
+        $this->redirectWithNotice(__('Unbekannte Aktion.', 'wp-ai-suite'), true);
+    }
+
+    /** @param int[] $documentIds */
+    private function bulkReindex(array $documentIds): void
+    {
+        $postIds = [];
+        $pdfRefs = [];
+
+        foreach ($documentIds as $documentId) {
+            $document = $this->documents->findById($documentId);
+
+            if ($document === null) {
+                continue;
+            }
+
+            if ($document->sourceType === 'wp_content') {
+                $postIds[] = (int) $document->sourceRef;
+            } elseif ($document->sourceType === 'pdf') {
+                $path = get_attached_file((int) $document->sourceRef);
+                $pdfRefs[] = new PdfFileReference((string) $document->sourceRef, $document->title, $path !== false ? $path : '');
+            }
+            // faq/custom_text: bewusst uebersprungen, siehe Klassen-Docblock ("Neu indexieren"
+            // ist nur fuer wp_content/pdf sinnvoll).
+        }
+
+        if ($postIds === [] && $pdfRefs === []) {
+            $this->redirectWithNotice(__('Keines der ausgewaehlten Dokumente kann neu indexiert werden (nur WordPress-Inhalte/PDFs).', 'wp-ai-suite'), true);
+
+            return;
+        }
+
+        $results = [];
+        if ($postIds !== []) {
+            $results[] = $this->dispatchSource(new WordPressContentSource(postIds: $postIds));
+        }
+        if ($pdfRefs !== []) {
+            $results[] = $this->dispatchSource(new PdfSource($pdfRefs, $this->pdfExtractor));
+        }
+
+        $queued = array_sum(array_map(static fn (IngestionDispatchResult $r): int => $r->queued, $results));
+        $failed = array_sum(array_map(static fn (IngestionDispatchResult $r): int => $r->summary->failed, $results));
+        $processed = array_sum(array_map(static fn (IngestionDispatchResult $r): int => $r->summary->processed, $results));
+        $errors = array_merge(...array_map(static fn (IngestionDispatchResult $r): array => $r->summary->errors, $results));
+
+        if ($failed > 0) {
+            $this->redirectWithNotice(implode(' ', $errors), true);
+
+            return;
+        }
+
+        if ($queued > 0) {
+            $this->redirectWithNotice(
+                sprintf(__('%d Dokument(e) werden im Hintergrund verarbeitet und erscheinen in Kuerze in der Liste.', 'wp-ai-suite'), $queued),
+                false,
+            );
+
+            return;
+        }
+
+        $this->redirectWithNotice(sprintf(__('%d Dokument(e) neu indexiert.', 'wp-ai-suite'), $processed), false);
+    }
+
+    /** Orchestriert die vollstaendige Loeschung ueber alle drei betroffenen Ports (siehe DocumentRepositoryInterface::delete()-Docblock). */
+    private function deleteDocument(int $documentId): void
+    {
+        $this->vectorStore->deleteByDocument($documentId);
+        $this->documents->deleteChunks($documentId);
+        $this->documents->delete($documentId);
+    }
+
+    private function ingestAndRedirect(KnowledgeSourceInterface $source, string $successMessage): void
+    {
+        $result = $this->dispatchSource($source);
 
         if ($result->summary->failed > 0) {
             $this->redirectWithNotice(implode(' ', $result->summary->errors), true);
@@ -469,6 +610,44 @@ final class KnowledgeBasePage
         }
 
         $this->redirectWithNotice($successMessage, false);
+    }
+
+    /**
+     * Aus ingestAndRedirect() extrahiert (Verbesserung Punkt 3), damit bulkReindex() dieselbe
+     * Provider-Aufloesung + Sync/Async-Schwellwert-Logik fuer MEHRERE Quellen (wp_content-Gruppe
+     * + pdf-Gruppe) wiederverwenden kann, statt sie zu duplizieren. Redirectet selbst bei
+     * fehlendem aktivem Provider (per redirectWithNotice()+exit) — der Rueckgabewert ist dann
+     * zwar laut Signatur non-null, wird aber wegen exit() nie mehr gelesen.
+     */
+    private function dispatchSource(KnowledgeSourceInterface $source): IngestionDispatchResult
+    {
+        try {
+            [$provider, ] = $this->providerResolver->resolve();
+        } catch (NoActiveProviderException $e) {
+            $this->redirectWithNotice($e->getMessage(), true);
+
+            return new IngestionDispatchResult(queued: 0, summary: new \WPAiSuite\Knowledge\IngestionSummary(0, 0, 0, []));
+        }
+
+        // Umbauplan Post-MVP Punkt 1: siehe EmbeddingProviderResolver-Docblock.
+        $embeddingProvider = $this->embeddingProviderResolver->resolve() ?? $provider;
+
+        $service = new DocumentIngestionService(
+            $this->documents,
+            $this->chunker,
+            $this->vectorStore,
+            new EmbeddingService($embeddingProvider),
+        );
+
+        // Umbauplan Post-MVP Punkt 3: syncMaxDocs per Filter statt neuer Admin-Option — Adi kann
+        // ihn bei Bedarf in einem mu-plugin/functions.php ueberschreiben, ohne dass dafuer ein
+        // eigenes UI-Feld noetig war (siehe ActionSchedulerIngestionDispatcher-Docblock).
+        $dispatcher = new ActionSchedulerIngestionDispatcher(
+            $service,
+            (int) apply_filters('wpais_ingest_sync_max_docs', 20),
+        );
+
+        return $dispatcher->dispatch($source);
     }
 
     private function assertRequestAllowed(): void

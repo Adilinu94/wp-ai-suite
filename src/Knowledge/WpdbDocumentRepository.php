@@ -135,6 +135,11 @@ final class WpdbDocumentRepository implements DocumentRepositoryInterface
         $this->wpdb->delete($this->chunksTable(), ['document_id' => $documentId], ['%d']);
     }
 
+    public function delete(int $documentId): void
+    {
+        $this->wpdb->delete($this->documentsTable(), ['id' => $documentId], ['%d']);
+    }
+
     /**
      * Umbauplan Post-MVP Punkt 9: loest listAll() ab. WHERE-Klausel wird aus den gesetzten
      * Kriterien zusammengebaut (nur die tatsaechlich gesetzten Filter landen als Platzhalter im

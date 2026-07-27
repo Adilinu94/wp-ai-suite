@@ -90,6 +90,11 @@ final class FakeDocumentRepository implements DocumentRepositoryInterface
         $this->chunksByDocument[$documentId] = [];
     }
 
+    public function delete(int $documentId): void
+    {
+        unset($this->documents[$documentId], $this->chunksByDocument[$documentId]);
+    }
+
     public function addChunk(int $documentId, int $chunkIndex, string $content, ?int $tokenCount): int
     {
         $chunkId = $this->nextChunkId++;
