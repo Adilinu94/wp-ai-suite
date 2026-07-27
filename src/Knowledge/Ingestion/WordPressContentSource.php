@@ -15,9 +15,18 @@ namespace WPAiSuite\Knowledge\Ingestion;
  */
 final class WordPressContentSource implements KnowledgeSourceInterface
 {
-    /** @param string[] $postTypes */
+    /** @var string[] Wiederverwendet von AutoSyncOnSaveListener, um denselben Default zu treffen. */
+    public const DEFAULT_POST_TYPES = ['post', 'page'];
+
+    /**
+     * @param string[] $postTypes
+     * @param int[]|null $postIds Verbesserung Punkt 2: wenn gesetzt, werden NUR diese Posts
+     *     geholt statt aller — genutzt vom save_post-Listener fuer den Einzelpost-Resync. null
+     *     (Default) bleibt das bisherige Verhalten (kompletter Re-Sync ueber "Neu indexieren").
+     */
     public function __construct(
-        private readonly array $postTypes = ['post', 'page'],
+        private readonly array $postTypes = self::DEFAULT_POST_TYPES,
+        private readonly ?array $postIds = null,
     ) {
     }
 
@@ -28,14 +37,20 @@ final class WordPressContentSource implements KnowledgeSourceInterface
 
     public function fetch(): iterable
     {
-        $query = new \WP_Query([
+        $args = [
             'post_type' => $this->postTypes,
             'post_status' => 'publish',
             'posts_per_page' => -1,
             'no_found_rows' => true,
             'orderby' => 'ID',
             'order' => 'ASC',
-        ]);
+        ];
+
+        if ($this->postIds !== null) {
+            $args['post__in'] = $this->postIds === [] ? [0] : $this->postIds;
+        }
+
+        $query = new \WP_Query($args);
 
         foreach ($query->posts as $post) {
             $rendered = apply_filters('the_content', $post->post_content);

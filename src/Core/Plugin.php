@@ -16,6 +16,7 @@ use WPAiSuite\AiCore\Provider\ActiveProviderResolver;
 use WPAiSuite\AiCore\Provider\ProviderFactory;
 use WPAiSuite\Core\Container\Container;
 use WPAiSuite\Frontend\ChatWidget\AssetManager;
+use WPAiSuite\Jobs\AutoSyncOnSaveListener;
 use WPAiSuite\Jobs\IngestionJob;
 use WPAiSuite\Frontend\ChatWidget\ChatWidgetRenderer;
 use WPAiSuite\Frontend\ChatWidget\Shortcode;
@@ -360,6 +361,11 @@ final class Plugin
                 $c->get(EmbeddingProviderResolver::class),
             );
         });
+
+        // Verbesserung Punkt 2: haengt sich an save_post, siehe AutoSyncOnSaveListener-Docblock.
+        $this->container->set(AutoSyncOnSaveListener::class, static function (Container $c): AutoSyncOnSaveListener {
+            return new AutoSyncOnSaveListener($c->get(IngestionJob::class));
+        });
     }
 
     private function bootKnowledgeServices(): void
@@ -367,6 +373,7 @@ final class Plugin
         $this->container->get(DocumentsController::class)->register();
         $this->container->get(KnowledgeBasePage::class)->register();
         $this->container->get(IngestionJob::class)->register();
+        $this->container->get(AutoSyncOnSaveListener::class)->register();
     }
 
     /**
