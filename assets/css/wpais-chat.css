@@ -55,6 +55,36 @@
 	box-sizing: inherit;
 }
 
+/**
+ * Verbesserung Punkt 4: schmale Kopfzeile nur fuer den Loeschen-Button — bewusst kein generischer
+ * "Header"-Slot mit Titel o.ae. (waere Funktionsumfang ueber den Bedarf hinaus), nur der eine
+ * Button, den es aktuell braucht.
+ */
+.wpais-chat__header {
+	display: flex;
+	justify-content: flex-end;
+	padding: 6px 8px 0;
+	flex: 0 0 auto;
+}
+
+.wpais-chat__delete {
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	font-size: 15px;
+	line-height: 1;
+	padding: 4px 6px;
+	border-radius: var(--wpais-radius);
+	color: var(--wpais-text-muted);
+	opacity: 0.7;
+}
+
+.wpais-chat__delete:hover,
+.wpais-chat__delete:focus-visible {
+	opacity: 1;
+	background: var(--wpais-border);
+}
+
 .wpais-chat__messages {
 	flex: 1 1 auto;
 	overflow-y: auto;

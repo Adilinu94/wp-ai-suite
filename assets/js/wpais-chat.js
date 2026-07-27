@@ -234,6 +234,13 @@
 		var needsToggle = mode === 'floating' || mode === 'popup';
 
 		var panelInnerHtml =
+			'<div class="wpais-chat__header">' +
+			'<button type="button" class="wpais-chat__delete" aria-label="' +
+			escapeHtml(__('Unterhaltung löschen')) +
+			'" title="' +
+			escapeHtml(__('Unterhaltung löschen')) +
+			'">&#128465;</button>' +
+			'</div>' +
 			'<div class="wpais-chat__messages" role="log" aria-live="polite"></div>' +
 			'<form class="wpais-chat__form">' +
 			'<textarea class="wpais-chat__input" rows="1" placeholder="' +
@@ -275,6 +282,7 @@
 		var formEl = panelEl.querySelector('.wpais-chat__form');
 		var inputEl = panelEl.querySelector('.wpais-chat__input');
 		var sendBtn = panelEl.querySelector('.wpais-chat__send');
+		var deleteBtn = panelEl.querySelector('.wpais-chat__delete');
 
 		var sessionToken = null;
 		try {
@@ -352,6 +360,42 @@
 
 		function showWelcome() {
 			addMessage('assistant', renderMarkdown(welcome));
+		}
+
+		/**
+		 * Verbesserung Punkt 4 (DSGVO-Selbstbedienung im Frontend): `DELETE
+		 * /wpais/v1/conversations/{token}` existiert serverseitig bereits seit M9
+		 * (ConversationController), hatte bisher aber keinen UI-Ausloeser hier. Loescht lokal
+		 * (Ansicht + sessionStorage) auch dann, wenn die DELETE-Anfrage selbst fehlschlaegt
+		 * (z.B. Netzwerkfehler) — aus Nutzersicht ist "die Unterhaltung ist weg" die wichtigere
+		 * Zusage als ein serverseitiger Bestaetigungs-Roundtrip; der Server-Datensatz kann beim
+		 * naechsten Ladenversuch derselben (dann bereits verworfenen) Session ohnehin nicht mehr
+		 * ueber die UI erreicht werden.
+		 */
+		function deleteConversation() {
+			if (!root.confirm(__('Unterhaltung wirklich löschen?'))) {
+				return;
+			}
+
+			var tokenToDelete = sessionToken;
+			sessionToken = null;
+			try {
+				window.sessionStorage.removeItem(storageKey);
+			} catch (err) {
+				/* siehe oben */
+			}
+
+			if (tokenToDelete) {
+				fetch(window.wpaisChatConfig.conversationsUrlBase + encodeURIComponent(tokenToDelete), {
+					method: 'DELETE',
+					headers: { 'X-WP-Nonce': window.wpaisChatConfig.nonce },
+				}).catch(function () {
+					/* Best-effort, siehe Docblock oben. */
+				});
+			}
+
+			messagesEl.innerHTML = '';
+			showWelcome();
 		}
 
 		function restoreHistory() {
@@ -501,6 +545,10 @@
 				}
 			}
 		});
+
+		if (deleteBtn) {
+			deleteBtn.addEventListener('click', deleteConversation);
+		}
 
 		// M8: Oeffnen/Schliessen fuer floating/popup. inline/sidebar haben keinen Launcher und
 		// sind dadurch immer "offen" — dieser ganze Block laeuft fuer sie einfach nicht.
