@@ -22,6 +22,7 @@ use WPAiSuite\Security\ClientIpResolver;
 use WPAiSuite\Security\PromptGuard;
 use WPAiSuite\Security\RateLimiter;
 use WPAiSuite\Tools\Builtin\KnowledgeSearchTool;
+use WPAiSuite\Tools\Builtin\WooCommerceOrderStatusTool;
 use WPAiSuite\Tools\Builtin\WooCommerceProductSearchTool;
 use WPAiSuite\Tools\ToolRegistry;
 
@@ -160,12 +161,19 @@ final class ChatController
 
         // M7: KnowledgeSearchTool braucht denselben $ragService wie das automatische M5-
         // Retrieval oben (bzw. wird gleich unten aufgerufen) — deshalb hier, nicht im
-        // Container, gebaut (siehe ToolRegistry-Docblock). WooCommerceProductSearchTool nur
-        // anbieten, wenn WooCommerce ueberhaupt aktiv ist — ein Tool anzubieten, das garantiert
-        // fehlschlaegt, ist schlechteres Modellverhalten als es gar nicht erst zu erwaehnen.
+        // Container, gebaut (siehe ToolRegistry-Docblock). WooCommerceProductSearchTool/
+        // WooCommerceOrderStatusTool nur anbieten, wenn WooCommerce ueberhaupt aktiv ist — ein
+        // Tool anzubieten, das garantiert fehlschlaegt, ist schlechteres Modellverhalten als es
+        // gar nicht erst zu erwaehnen. $wpUserId wird hier (statt erst weiter unten wie bisher)
+        // aufgeloest, weil WooCommerceOrderStatusTool sie schon beim Bauen der Tool-Liste
+        // braucht — siehe deren Klassen-Docblock, warum das per Konstruktor statt per
+        // ToolExecutionContext in execute() passiert.
+        $wpUserId = get_current_user_id() ?: null;
+
         $tools = [new KnowledgeSearchTool($ragService)];
         if (function_exists('wc_get_products')) {
             $tools[] = new WooCommerceProductSearchTool();
+            $tools[] = new WooCommerceOrderStatusTool($wpUserId);
         }
         $toolRegistry = new ToolRegistry($tools);
 
@@ -174,8 +182,6 @@ final class ChatController
         // instanziiert statt zusaetzlich in Plugin.php/den Konstruktor dieser Klasse
         // aufzunehmen, nur um einen einzigen new-Aufruf zu verschieben.
         $conversationService = new ConversationService($this->conversations, $this->promptBuilder, $provider, $model, $ragService, new RagQueryBuilder(), $toolRegistry);
-
-        $wpUserId = get_current_user_id() ?: null;
 
         try {
             $conversation = $conversationService->resolveConversation($sessionToken, $wpUserId);
