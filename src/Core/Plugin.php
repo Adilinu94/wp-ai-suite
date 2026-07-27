@@ -7,6 +7,7 @@ namespace WPAiSuite\Core;
 use WPAiSuite\Admin\Pages\ProviderSettingsPage;
 use WPAiSuite\Admin\Pages\KnowledgeBasePage;
 use WPAiSuite\Admin\Pages\UsageLogsPage;
+use WPAiSuite\Admin\Pages\HealthCheckPage;
 use WPAiSuite\Admin\PrivacyNoticeAdminNotice;
 use WPAiSuite\Admin\UsageCostEstimator;
 use WPAiSuite\AiCore\Conversation\Repository\ConversationRepositoryInterface;
@@ -243,6 +244,11 @@ final class Plugin
         $this->container->set(UsageLogsPage::class, static function (Container $c): UsageLogsPage {
             return new UsageLogsPage($c->get(ConversationRepositoryInterface::class), $c->get(UsageCostEstimator::class));
         });
+
+        // Verbesserung Punkt 7: nutzt dieselben, bereits weiter oben registrierten Resolver.
+        $this->container->set(HealthCheckPage::class, static function (Container $c): HealthCheckPage {
+            return new HealthCheckPage($c->get(ActiveProviderResolver::class), $c->get(EmbeddingProviderResolver::class));
+        });
     }
 
     private function bootConversationServices(): void
@@ -251,6 +257,7 @@ final class Plugin
         $this->container->get(ConnectionTestController::class)->register();
         $this->container->get(ConversationController::class)->register();
         $this->container->get(UsageLogsPage::class)->register();
+        $this->container->get(HealthCheckPage::class)->register();
     }
 
     /**
