@@ -12,6 +12,17 @@ namespace WPAiSuite\Knowledge\VectorStore;
  * Cosine-Similarity laeuft PHP-seitig ueber CosineSimilarity::compute() gegen alle Chunks
  * verarbeiteter Dokumente (ausreichend fuer MVP-Groessenordnung, siehe Abschnitt 7).
  *
+ * Verbesserung Punkt 8 (Skalierungsgrenze): query() ist bewusst ein Brute-Force-Scan — JEDER
+ * verarbeitete Chunk wird bei JEDER Anfrage aus der DB geladen, JSON-dekodiert und gegen den
+ * Query-Vektor verglichen, kein echter ANN-Index. Das ist fuer ein paar tausend Chunks voellig
+ * ausreichend, wird aber ab einem gewissen Umfang spuerbar langsamer (linear mit der
+ * Chunk-Anzahl). Die Diagnose-Seite (HealthCheckPage) zeigt die aktuelle Chunk-Anzahl als
+ * Fruehwarnsignal. Der Ausweg ist laut Docblock oben bereits als Port vorgesehen: ein neuer
+ * VectorStoreInterface-Adapter (Qdrant/pgvector) austauschen, OHNE dass RagService/
+ * DocumentIngestionService sich aendern muessen — das ist der bewusst groessere, eigene Auftrag
+ * (echter Netzwerkdienst, API-Key-Verwaltung, in dieser Sandbox mangels Netzwerkzugriff auf
+ * Qdrant/Pinecone weder baubar noch testbar), nicht Teil dieser Verbesserung.
+ *
  * upsert() legt KEINE neue Zeile an — die Chunk-Zeile (document_id, chunk_index, content) wird
  * bereits von DocumentRepositoryInterface::addChunk() angelegt, upsert() setzt nur noch die
  * embedding-Spalte der bereits existierenden Zeile. $metadata wird in Phase 1 ignoriert (die

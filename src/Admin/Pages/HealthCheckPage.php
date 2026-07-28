@@ -59,6 +59,7 @@ final class HealthCheckPage
         $this->renderRow(__('PHP-Erweiterungen', 'wp-ai-suite'), $this->checkExtensions());
         $this->renderRow(__('Datenbank-Tabellen', 'wp-ai-suite'), $this->checkTables());
         $this->renderRow(__('Action Scheduler', 'wp-ai-suite'), $this->checkActionScheduler());
+        $this->renderRow(__('Wissensbasis-Größe', 'wp-ai-suite'), $this->checkChunkVolume());
         echo '</tbody></table></div>';
     }
 
@@ -155,6 +156,38 @@ final class HealthCheckPage
             /* translators: %d: Anzahl wartender Ingestion-Jobs */
             __('Verfügbar, %d Dokument(e) aktuell in der Warteschlange.', 'wp-ai-suite'),
             $pending,
+        )];
+    }
+
+    /**
+     * Verbesserung Punkt 8: WpdbJsonVectorStore scannt bei JEDER RAG-Anfrage ALLE verarbeiteten
+     * Chunks (siehe dessen Docblock, kein echter ANN-Index) — dieser Wert ist das
+     * Fruehwarnsignal dafuer, ohne live einen Provider aufzurufen. Schwellwert 2000 ist eine
+     * grobe Faustregel (spuerbare Verlangsamung haengt auch von der Server-Hardware ab), keine
+     * gemessene harte Grenze.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    private function checkChunkVolume(): array
+    {
+        global $wpdb;
+
+        $chunksTable = $wpdb->prefix . 'wpais_chunks';
+        $documentsTable = $wpdb->prefix . 'wpais_documents';
+        $count = (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$chunksTable} c INNER JOIN {$documentsTable} d ON d.id = c.document_id WHERE d.status = 'processed'",
+        );
+
+        $threshold = 2000;
+
+        if ($count <= $threshold) {
+            return ['ok' => true, 'message' => sprintf(__('%d verarbeitete Chunks.', 'wp-ai-suite'), $count)];
+        }
+
+        return ['ok' => false, 'message' => sprintf(
+            /* translators: %d: Anzahl verarbeiteter Chunks */
+            __('%d verarbeitete Chunks — RAG-Anfragen koennen spuerbar langsamer werden (siehe WpdbJsonVectorStore-Docblock zur Skalierungsgrenze).', 'wp-ai-suite'),
+            $count,
         )];
     }
 
