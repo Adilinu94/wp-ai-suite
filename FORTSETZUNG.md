@@ -687,6 +687,70 @@ das ganze Konto treffen wie der aktuelle.
     (`SmalotPdfTextExtractor`) als `failed`-Dokument mit Fehlermeldung auffallen, kein Absturz,
     aber eine spaete statt fruehe Fehlermeldung.
 
+## Verbesserungen (Punkt 1–10 aus einer 10-Punkte-Liste, ausser 5+6 — nicht Teil des Umbauplans)
+
+Nach U1–U10 hat Adi um 10 weitere Verbesserungsideen gebeten (siehe Chat-Verlauf), davon 8
+umgesetzt (Punkt 5 „.pot-Datei" und Punkt 6 „Schema-Migrationspfad" ausdruecklich NICHT
+gewuenscht). Alle einzeln committet und gepusht:
+
+- **Punkt 1 — Dokumente einzeln loeschen:** `DocumentRepositoryInterface::delete()` neu (Wpdb +
+  Fake), Loeschen-Link pro Zeile in der Wissensbasis mit Bestaetigungsdialog. Loescht ueber
+  `KnowledgeBasePage::deleteDocument()` immer alle drei betroffenen Ports (VectorStore, Chunks,
+  Dokument-Zeile).
+- **Punkt 2 — Automatischer Einzelpost-Resync bei WP-Content-Aenderungen:** neuer
+  `AutoSyncOnSaveListener` (Jobs-Namespace) haengt sich an `save_post`, nutzt den dafuer neu
+  ergaenzten `$postIds`-Filter von `WordPressContentSource` (statt wie der manuelle
+  "Neu indexieren"-Button IMMER alle Inhalte neu zu syncen). Laeuft ueber Action Scheduler wenn
+  verfuegbar (sonst synchroner Fallback ueber `IngestionJob::handle()`), um den Post-Speichern-
+  Request nicht durch eine Live-Provider-Anfrage zu verlangsamen. Bewusst NICHT gebaut: kein
+  automatisches Entfernen aus der Wissensbasis bei Depublizierung/Papierkorb — waere ein
+  eigenes Feature.
+- **Punkt 3 — Bulk-Aktionen:** Mehrfachauswahl (Checkboxen + "Mit Auswahl…") fuer
+  Loeschen/Neu-indexieren. Bulk-Reindex gruppiert alle ausgewaehlten wp_content-Dokumente in
+  EINE `WordPressContentSource(postIds: [...])`-Anfrage statt N× (potenziell komplette) Resyncs
+  auszuloesen — nutzt denselben Punkt-2-Mechanismus. `ingestAndRedirect()` dafuer in eine
+  wiederverwendbare `dispatchSource()`-Methode aufgeteilt (kein Verhaltensunterschied fuer den
+  bestehenden Einzel-Reindex-Button).
+- **Punkt 4 — "Unterhaltung loeschen" im Chat-Widget:** `DELETE /wpais/v1/conversations/{token}`
+  gab es serverseitig schon seit M9, aber keinen UI-Ausloeser. Neuer Kopfbereich mit
+  Muelleimer-Button in `wpais-chat.js`/`wpais-chat.css`; loescht lokal (Ansicht +
+  sessionStorage) auch wenn die DELETE-Anfrage selbst fehlschlaegt (Best-Effort, siehe
+  `deleteConversation()`-Docblock).
+- **Punkt 7 — Diagnose-/Health-Check-Seite:** neue `HealthCheckPage` (eigenes Submenu). Prueft
+  Provider-Konfiguration (ueber `ActiveProviderResolver`/`EmbeddingProviderResolver`, KEIN
+  Live-Aufruf — kostet also nichts), `WPAIS_ENCRYPTION_KEY`, PHP-Extensions
+  (sodium/curl/json), alle 6 DB-Tabellen, Action-Scheduler-Verfuegbarkeit + Warteschlangentiefe,
+  und (siehe Punkt 8) die aktuelle Chunk-Anzahl.
+- **Punkt 8 — Vector-Store-Skalierungsgrenze:** kein externer Adapter (Netzwerkzugriff auf
+  Pinecone/Qdrant in dieser Sandbox nicht moeglich, waere ein eigener, groesserer Auftrag) —
+  stattdessen die O(n)-Charakteristik von `WpdbJsonVectorStore::query()` im Docblock
+  dokumentiert und eine Fruehwarnung (Chunk-Anzahl, Schwelle 2000) auf der neuen
+  Diagnose-Seite ergaenzt. Der eigentliche Ausweg (Adapter-Tausch ohne Aenderungen an
+  RagService) stand als Kommentar in `VectorStoreInterface` bereits von Anfang an drin.
+- **Punkt 9 — Bestellstatus-Tool:** neues `WooCommerceOrderStatusTool` (nur fuer eingeloggte
+  Kunden, `isAllowedFor()` prueft `$context->isLoggedIn`). WICHTIG: `ToolInterface::execute()`
+  bekommt bewusst KEINEN `ToolExecutionContext` (Kern-Contract, wird 1:1 zum Phase-2-MCP-Tool) —
+  `wpUserId` wird stattdessen wie bei `KnowledgeSearchTool`/`$ragService` schon ueblich PER
+  REQUEST in den Tool-Konstruktor gebunden (`ChatController`). Jede Abfrage filtert zusaetzlich
+  nach `get_customer_id() === $wpUserId`, damit kein Kunde fremde Bestellnummern erraten und
+  abfragen kann.
+- **Punkt 10 — CSV Im-/Export fuer FAQ/Freitext:** `wpais_documents` speichert nur den Titel,
+  der Inhalt steckt gechunkt (mit Overlap) in `wpais_chunks` — neue `ChunkContentReconstructor`
+  (WP-frei) baut daraus den Text zurueck: bei einem Chunk exakt, bei mehreren per
+  Suffix-Praefix-Ueberlappungserkennung (echter String-Vergleich statt eines angenommenen
+  festen Zeichenversatzes, weil `RecursiveTextChunker::mergeWithOverlap()` den Overlap-Schwanz
+  trimmt und zusaetzlich ein Leerzeichen einfuegt) — **per Round-Trip-Test gegen den echten
+  Chunker verifiziert**, kein Datenverlust, keine Duplikate. Export/Import ueber
+  `handleExportCsv()`/`handleImportCsv()`, Import gruppiert nach entry_type und laeuft ueber
+  dieselbe `dispatchSource()` wie Bulk-Reindex (also auch hier Sync/Async-Schwelle aktiv). ref
+  darf beim Import leer bleiben (AutoRefResolver wie im Einzelformular).
+
+Alle WP-freien Teile (`ChunkContentReconstructor`, `AutoRefResolver`/`AutoSyncOnSaveListener`-
+Bausteine, `DocumentListCriteria`/`Page`-Filterlogik) **tatsaechlich per PHP-CLI und/oder
+Pest-Testdatei verifiziert**, nicht nur `php -l`. `WooCommerceOrderStatusTool` und
+`AutoSyncOnSaveListener` selbst sind WP/WC-gebunden (wie ihre Vorbilder
+`WooCommerceProductSearchTool`/`WordPressContentSource`) — nur integrationstestbar.
+
 ## Wie im neuen Chat weitermachen
 
 **Stand bei Chat-Ende:** M0–M10 fertig auf main (siehe "Stand" oben, weiterhin gueltig). Seit
@@ -694,17 +758,27 @@ diesem Dokument zusaetzlich: **`UMBAUPLAN-POST-MVP.md`** (Repo-Root) mit 10 prio
 Post-MVP-Punkten (U1–U10, Wellen A–E) — **U1, U3, U4, U5, U6, U7, U8, U9 sind bereits umgesetzt
 und gepusht** (jeweils eigener Commit, Details in den Commit-Messages und im
 "Post-MVP"-Abschnitt oben). **U2 (Elementor-QA)** bleibt blockiert: braucht Browser-Zugriff auf
-`hcm.local`, dafuer existiert kein verbundener Connector. **U10** ist jetzt der einzige noch
-offene Punkt, und zwar nur noch der Teil, der echten Composer/Packagist- bzw. Browser-Zugriff
+`hcm.local`, dafuer existiert kein verbundener Connector. **U10** ist der einzige noch offene
+Umbauplan-Punkt, und zwar nur noch der Teil, der echten Composer/Packagist- bzw. Browser-Zugriff
 braucht (siehe U10-Absatz oben fuer das Detail, was schon fertig ist: Build-Skript,
 Staging-Checkliste, CI-Workflow, uninstall.php/Version bereits verifiziert).
+
+**Zusaetzlich (ausserhalb des Umbauplans):** 8 weitere Verbesserungen umgesetzt und gepusht —
+siehe Abschnitt "Verbesserungen (Punkt 1–10 ..., ausser 5+6)" direkt oberhalb dieses Abschnitts
+fuer alle Details. Kurzfassung: Dokumente einzeln loeschbar, automatischer Einzelpost-Resync bei
+WP-Content-Aenderungen, Bulk-Aktionen (Loeschen/Reindex mit Mehrfachauswahl), "Unterhaltung
+loeschen" im Chat-Widget, Diagnose-/Health-Check-Seite, Vector-Store-Skalierungsgrenze
+dokumentiert + Fruehwarnung, Bestellstatus-Tool fuer eingeloggte Kunden, CSV Im-/Export fuer
+FAQ/Freitext. Punkt 5 (.pot-Datei) und Punkt 6 (Schema-Migrationspfad) waren ausdruecklich NICHT
+gewuenscht — nicht vergessen, sondern bewusst ausgelassen.
 
 **Fuer den neuen Chat reicht:** `UMBAUPLAN-POST-MVP.md` + dieses Dokument hochladen/verlinken,
 dann "Mach weiter mit U10" nur noch sinnvoll, wenn dabei entweder ein hcm.local/
 gfr-industriemontagen.de-Connector zur Verfuegung steht ODER Adi `bin/build-release.sh` +
 `STAGING-CHECKLIST.md` selbst auf `solar.local` durchgeht und die Ergebnisse zurückmeldet — ohne
 das eine oder andere kann kein neuer Chat hier weiterkommen (reine Sandbox-Grenze, kein
-Codier-Rest mehr offen). Der neue Chat sollte NICHT bei U1–U9 nochmal anfangen — die sind fertig.
+Codier-Rest mehr offen). Der neue Chat sollte NICHT bei U1–U9 oder den 8 Verbesserungen nochmal
+anfangen — die sind fertig.
 
 **U3 (Async-Ingestion) — was genau gebaut wurde:**
 - `src/Jobs/IngestionDispatcherInterface.php`, `IngestionDispatchResult.php`,

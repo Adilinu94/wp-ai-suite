@@ -107,6 +107,26 @@ hcm.local-Connector), U10 ist dieser Release-Durchlauf selbst.
       leer lassen) speichern — bekommt automatisch einen Slug aus dem Titel; denselben Titel
       erneut ohne Ref speichern aktualisiert denselben Eintrag statt einen zweiten anzulegen.
 
+## Verbesserungen (ausserhalb des Umbauplans, siehe FORTSETZUNG.md)
+
+- [ ] **Dokumente loeschen** — einzeln (Loeschen-Link) und per Bulk-Auswahl: Dokument
+      verschwindet aus der Liste UND taucht in keiner Chat-Antwort mehr als Quelle auf.
+- [ ] **Bulk-Reindex** — mehrere wp_content-Dokumente markieren, "Neu indexieren": nur diese
+      Posts werden neu geholt (nicht die komplette Website).
+- [ ] **Auto-Resync** — einen indexierten Post bearbeiten und speichern (ohne den
+      "Neu indexieren"-Button zu klicken): Aenderung taucht nach kurzer Zeit von selbst in der
+      Wissensbasis auf.
+- [ ] **Chat-Widget: Unterhaltung loeschen** — Button im Chat-Header, Bestaetigungsdialog,
+      Verlauf ist danach weg (auch nach Neuladen der Seite).
+- [ ] **Diagnose-Seite** — laedt ohne Fehler, zeigt plausible Werte (Provider, Tabellen,
+      Action Scheduler, Chunk-Anzahl).
+- [ ] **Bestellstatus-Tool** — als eingeloggter Kunde mit mindestens einer Bestellung im Chat
+      nach dem Bestellstatus fragen: korrekte eigene Daten. Als Gast (nicht eingeloggt)
+      fragen: Tool wird nicht genutzt/kein Datenzugriff.
+- [ ] **CSV-Export/-Import** — FAQ-Wissensbasis exportieren, CSV-Datei oeffnen und pruefen
+      (Inhalt plausibel, Spalte "vollstaendig" bei kurzen Eintraegen "ja"), dieselbe Datei
+      wieder importieren: keine Duplikate (Ref wird wiedererkannt).
+
 ## Danach
 
 - [ ] `uninstall.php` NICHT auf dem eigentlichen Staging-System testen (loescht alle Daten
