@@ -209,6 +209,16 @@ final class WpdbDocumentRepository implements DocumentRepositoryInterface
         return (int) $this->wpdb->insert_id;
     }
 
+    public function findChunkContents(int $documentId): array
+    {
+        $rows = $this->wpdb->get_col($this->wpdb->prepare(
+            "SELECT content FROM {$this->chunksTable()} WHERE document_id = %d ORDER BY chunk_index ASC",
+            $documentId,
+        ));
+
+        return is_array($rows) ? $rows : [];
+    }
+
     /** @param array<string,mixed> $row */
     private function hydrate(array $row): StoredDocument
     {

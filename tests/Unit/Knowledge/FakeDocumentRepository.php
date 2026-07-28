@@ -107,6 +107,14 @@ final class FakeDocumentRepository implements DocumentRepositoryInterface
         return $chunkId;
     }
 
+    public function findChunkContents(int $documentId): array
+    {
+        $chunks = $this->chunksByDocument[$documentId] ?? [];
+        usort($chunks, static fn (array $a, array $b): int => $a['index'] <=> $b['index']);
+
+        return array_column($chunks, 'content');
+    }
+
     public function list(DocumentListCriteria $criteria): DocumentListPage
     {
         $documents = array_values($this->documents);

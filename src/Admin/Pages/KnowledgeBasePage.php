@@ -16,6 +16,7 @@ use WPAiSuite\Knowledge\DocumentRepositoryInterface;
 use WPAiSuite\Knowledge\Embedding\EmbeddingProviderResolver;
 use WPAiSuite\Knowledge\Embedding\EmbeddingService;
 use WPAiSuite\Knowledge\Ingestion\AutoRefResolver;
+use WPAiSuite\Knowledge\Ingestion\ChunkContentReconstructor;
 use WPAiSuite\Knowledge\Ingestion\FaqEntry;
 use WPAiSuite\Knowledge\Ingestion\FaqSource;
 use WPAiSuite\Knowledge\Ingestion\KnowledgeSourceInterface;
@@ -78,6 +79,8 @@ final class KnowledgeBasePage
         add_action('admin_post_wpais_kb_reindex', [$this, 'handleReindex']);
         add_action('admin_post_wpais_kb_delete', [$this, 'handleDelete']);
         add_action('admin_post_wpais_kb_bulk_action', [$this, 'handleBulkAction']);
+        add_action('admin_post_wpais_kb_export_csv', [$this, 'handleExportCsv']);
+        add_action('admin_post_wpais_kb_import_csv', [$this, 'handleImportCsv']);
     }
 
     public function renderPage(): void
@@ -92,6 +95,7 @@ final class KnowledgeBasePage
         $this->renderDocumentsTable($this->documents->list($criteria), $criteria);
         $this->renderUploadPdfForm();
         $this->renderAddEntryForm();
+        $this->renderExportImportSection();
         echo '</div>';
     }
 
@@ -366,6 +370,30 @@ final class KnowledgeBasePage
         echo '</form>';
     }
 
+    /**
+     * Verbesserung Punkt 10: Export als einfacher Nonce-Link (GET, loest direkt den
+     * Datei-Download aus — kein Formular noetig fuer eine reine Leseoperation). Import als
+     * eigenes Formular mit Datei-Upload, analog zu renderUploadPdfForm().
+     */
+    private function renderExportImportSection(): void
+    {
+        echo '<h2>' . esc_html__('FAQ / Freitext: CSV-Import/-Export', 'wp-ai-suite') . '</h2>';
+        echo '<p class="description">' . esc_html__('Export enthaelt nur FAQ- und Freitext-Eintraege (kein WordPress-Inhalt/PDF, die haben ja bereits eine externe Quelle). Die Spalte "vollstaendig" zeigt an, ob der Inhalt exakt oder nur bestmoeglich rekonstruiert ist.', 'wp-ai-suite') . '</p>';
+
+        $exportUrl = wp_nonce_url(
+            admin_url('admin-post.php?action=wpais_kb_export_csv'),
+            self::NONCE_ACTION,
+        );
+        echo '<p><a href="' . esc_url($exportUrl) . '" class="button">' . esc_html__('Als CSV exportieren', 'wp-ai-suite') . '</a></p>';
+
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" enctype="multipart/form-data">';
+        wp_nonce_field(self::NONCE_ACTION);
+        echo '<input type="hidden" name="action" value="wpais_kb_import_csv" />';
+        echo '<p><input type="file" name="csv_file" accept=".csv,text/csv" required /> ';
+        submit_button(__('CSV importieren', 'wp-ai-suite'), 'secondary', '', false);
+        echo '</p></form>';
+    }
+
     public function handleUploadPdf(): void
     {
         $this->assertRequestAllowed();
@@ -584,6 +612,135 @@ final class KnowledgeBasePage
         $this->vectorStore->deleteByDocument($documentId);
         $this->documents->deleteChunks($documentId);
         $this->documents->delete($documentId);
+    }
+
+    /**
+     * Verbesserung Punkt 10: Export nur fuer faq/custom_text — wp_content/pdf haben eine
+     * externe Quelle (WP-Post bzw. Media-Anhang), die kein CSV-Roundtrip braucht. Die Spalte
+     * "vollstaendig" (ja/nein) zeigt an, ob die Rekonstruktion aus den Chunks exakt ist (ein
+     * einzelner Chunk) oder Best-Effort (mehrere Chunks) — siehe ChunkContentReconstructor-
+     * Docblock.
+     */
+    public function handleExportCsv(): void
+    {
+        $this->assertRequestAllowed();
+
+        $reconstructor = new ChunkContentReconstructor();
+        $documents = array_merge(
+            $this->documents->list(new DocumentListCriteria(sourceType: 'faq', perPage: 100000))->items,
+            $this->documents->list(new DocumentListCriteria(sourceType: 'custom_text', perPage: 100000))->items,
+        );
+
+        nocache_headers();
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="wissensbasis-export-' . gmdate('Y-m-d') . '.csv"');
+
+        $out = fopen('php://output', 'w');
+        fputcsv($out, ['ref', 'entry_type', 'title', 'content', 'vollstaendig']);
+
+        foreach ($documents as $document) {
+            $chunkContents = $this->documents->findChunkContents($document->id);
+            fputcsv($out, [
+                (string) $document->sourceRef,
+                $document->sourceType,
+                $document->title,
+                $reconstructor->reconstruct($chunkContents),
+                $reconstructor->isExact($chunkContents) ? 'ja' : 'nein',
+            ]);
+        }
+
+        fclose($out);
+        exit;
+    }
+
+    /**
+     * Verbesserung Punkt 10: erwartet dieselben Spalten wie handleExportCsv() ausgibt (ref,
+     * entry_type, title, content — "vollstaendig" wird beim Import ignoriert, falls vorhanden).
+     * ref darf leer sein — dann greift wie im Einzelformular AutoRefResolver. Nutzt fgetcsv()
+     * (nicht zeilenweises Parsen), damit mehrzeiliger Inhalt in Anfuehrungszeichen korrekt
+     * gelesen wird. Gruppiert nach entry_type und schickt jede Gruppe als EINE FaqSource durch
+     * dispatchSource() — dieselbe Sync/Async-Schwelle wie bei Bulk-Reindex greift damit auch hier.
+     */
+    public function handleImportCsv(): void
+    {
+        $this->assertRequestAllowed();
+
+        if (!isset($_FILES['csv_file']) || !is_array($_FILES['csv_file']) || (int) $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+            $this->redirectWithNotice(__('CSV-Import fehlgeschlagen (keine Datei erhalten).', 'wp-ai-suite'), true);
+
+            return;
+        }
+
+        $handle = fopen((string) $_FILES['csv_file']['tmp_name'], 'rb');
+
+        if ($handle === false) {
+            $this->redirectWithNotice(__('CSV-Datei konnte nicht gelesen werden.', 'wp-ai-suite'), true);
+
+            return;
+        }
+
+        fgetcsv($handle); // Kopfzeile ueberspringen.
+
+        $entriesByType = ['faq' => [], 'custom_text' => []];
+        $skipped = 0;
+
+        while (($row = fgetcsv($handle)) !== false) {
+            if (count($row) < 4) {
+                $skipped++;
+
+                continue;
+            }
+
+            [$ref, $entryType, $title, $content] = $row;
+            $entryType = $entryType === 'custom_text' ? 'custom_text' : 'faq';
+            $title = trim((string) $title);
+            $content = trim((string) $content);
+
+            if ($title === '' || $content === '') {
+                $skipped++;
+
+                continue;
+            }
+
+            $ref = trim((string) $ref);
+            if ($ref === '') {
+                $ref = (new AutoRefResolver($this->documents))->resolve($entryType, sanitize_title($title), $title);
+            }
+
+            $entriesByType[$entryType][] = new FaqEntry($ref, $title, $content);
+        }
+
+        fclose($handle);
+
+        if ($entriesByType['faq'] === [] && $entriesByType['custom_text'] === []) {
+            $this->redirectWithNotice(__('Keine gueltigen Zeilen in der CSV-Datei gefunden.', 'wp-ai-suite'), true);
+
+            return;
+        }
+
+        $results = [];
+        foreach ($entriesByType as $entryType => $entries) {
+            if ($entries !== []) {
+                $results[] = $this->dispatchSource(new FaqSource($entryType, $entries));
+            }
+        }
+
+        $failed = array_sum(array_map(static fn (IngestionDispatchResult $r): int => $r->summary->failed, $results));
+
+        if ($failed > 0) {
+            $errors = array_merge(...array_map(static fn (IngestionDispatchResult $r): array => $r->summary->errors, $results));
+            $this->redirectWithNotice(implode(' ', $errors), true);
+
+            return;
+        }
+
+        $imported = array_sum(array_map(static fn (IngestionDispatchResult $r): int => $r->summary->processed + $r->queued, $results));
+        $message = sprintf(__('%d Eintrag/Einträge importiert.', 'wp-ai-suite'), $imported);
+        if ($skipped > 0) {
+            $message .= ' ' . sprintf(__('%d Zeile(n) uebersprungen (unvollstaendig).', 'wp-ai-suite'), $skipped);
+        }
+
+        $this->redirectWithNotice($message, false);
     }
 
     private function ingestAndRedirect(KnowledgeSourceInterface $source, string $successMessage): void
